@@ -1,0 +1,22 @@
+# 비밀키
+.env
+
+# 벡터 DB 저장소 (재생성 가능, 용량 큼)
+data/vector_db/
+
+# 파이썬
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# 프론트엔드 (FE)
+FE/node_modules/
+FE/dist/
+FE/.vite/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
