@@ -1,45 +1,63 @@
 """
-3단계: RAG 검색.
+3단계: RAG 검색 (진짜 ChromaDB 버전).
+질문을 임베딩해서 ChromaDB에서 가장 비슷한 청크를 찾는다.
 
-★ 1주차 임시 버전이다. ★
-지금은 ChromaDB 대신 인메모리 더미 문서에서 키워드로 대충 고른다.
-목적은 '파이프라인이 끝까지 흐르는지' 확인하는 것뿐이다.
-
-2주차 할 일:
-  - data/knowledge_base/ 에 전기 회사 민원 FAQ·규정 정제 문서 채우기
-  - AI/rag/ingest.py 로 청크 분리(300~500자, 약간 겹침) → 임베딩 → data/vector_db/ 에 저장
-  - 이 retriever 를 ChromaDB 유사도 검색으로 교체
-  - 저장/검색에 같은 임베딩 모델 사용, 청크마다 출처 메타데이터
+★ 사전 준비 ★ 먼저 `python -m AI.rag.ingest` 를 한 번 실행해
+   data/vector_db/ 에 벡터를 만들어 둬야 한다.
+   (아직 안 했으면 아래 폴백 안내 문구가 대신 나온다.)
 """
-from BE.core.schemas import RetrievedDoc, InquiryType, Classification
+import chromadb
+from chromadb.errors import ChromaError
 
-# 유형별 더미 근거 문서 (2주차에 실제 지식베이스로 대체)
-_DUMMY_KB: dict[InquiryType, list[RetrievedDoc]] = {
-    InquiryType.CAREER_CERT: [
-        RetrievedDoc(
-            content="경력증명서는 사내 포털 '증명서 발급' 메뉴 또는 경력관리팀 방문 신청으로 발급받을 수 있습니다. 처리 기간은 영업일 기준 2~3일입니다.",
-            source="[더미] 경력증명_발급절차.md",
-            score=0.9,
-        ),
-    ],
-    InquiryType.ERROR: [
-        RetrievedDoc(
-            content="로그인 오류 시 비밀번호 초기화 후 재시도하고, 그래도 안 되면 IT지원팀(내선 1234)으로 문의하십시오.",
-            source="[더미] 로그인_장애_FAQ.md",
-            score=0.85,
-        ),
-    ],
-}
+from AI.embedder import embed_text
+from BE.core.schemas import RetrievedDoc, Classification
 
-_DEFAULT_DOC = RetrievedDoc(
-    content="해당 문의에 대한 안내 자료를 준비 중입니다. 담당 부서에서 확인 후 회신드립니다.",
-    source="[더미] 기본안내.md",
-    score=0.3,
+VECTOR_DIR = "data/vector_db"
+COLLECTION_NAME = "minwon_kb"
+
+_collection = None  # 한 번만 연결
+
+
+def _get_collection():
+    global _collection
+    if _collection is None:
+        client = chromadb.PersistentClient(path=VECTOR_DIR)
+        _collection = client.get_collection(COLLECTION_NAME)
+    return _collection
+
+
+# 아직 ingest 안 한 경우 보여줄 안내
+_NOT_READY_DOC = RetrievedDoc(
+    content="(지식베이스가 아직 준비되지 않았습니다. 터미널에서 `python -m AI.rag.ingest` 를 한 번 실행하세요.)",
+    source="[안내] ingest 필요",
+    score=0.0,
 )
 
 
 def retrieve(text: str, cls: Classification, top_k: int = 3) -> list[RetrievedDoc]:
-    docs = _DUMMY_KB.get(cls.type, [])
-    if not docs:
-        docs = [_DEFAULT_DOC]
-    return docs[:top_k]
+    """질문 text 와 의미가 가장 가까운 청크 top_k 개를 돌려준다."""
+    try:
+        collection = _get_collection()
+    except Exception:
+        # 컬렉션이 없음 = 아직 ingest 안 함
+        return [_NOT_READY_DOC]
+
+    query_vec = embed_text(text)
+    res = collection.query(query_embeddings=[query_vec], n_results=top_k)
+
+    docs: list[RetrievedDoc] = []
+    documents = res.get("documents", [[]])[0]
+    metadatas = res.get("metadatas", [[]])[0]
+    distances = res.get("distances", [[]])[0]
+
+    for doc, meta, dist in zip(documents, metadatas, distances):
+        meta = meta or {}
+        # 출처 = 파일명 + 제목 (답변 근거 표시 + 평가 점수용)
+        src = meta.get("source", "?")
+        heading = meta.get("heading", "")
+        source_label = f"{src} > {heading}" if heading else src
+        # cosine distance(0~2) → 유사도 점수(1~-1)로 환산
+        score = 1.0 - float(dist)
+        docs.append(RetrievedDoc(content=doc, source=source_label, score=round(score, 3)))
+
+    return docs or [_NOT_READY_DOC]
