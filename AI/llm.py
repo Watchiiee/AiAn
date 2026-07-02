@@ -21,7 +21,7 @@ def _get_client():
     return _client
 
 
-def call_llm(model: str, system: str, user: str, max_tokens: int = 1024) -> Optional[str]:
+def call_llm(model: str, system: str, user: str, max_tokens: int = 2048) -> Optional[str]:
     """
     LLM에 한 번 질의하고 텍스트를 돌려준다.
     키가 없으면 None (호출부에서 더미 응답으로 대체).
@@ -33,13 +33,14 @@ def call_llm(model: str, system: str, user: str, max_tokens: int = 1024) -> Opti
 
     from google.genai import types
 
-    resp = client.models.generate_content(
-        model=model,
-        contents=user,
-        config=types.GenerateContentConfig(
-            system_instruction=system,
-            max_output_tokens=max_tokens,
-            temperature=0.2,  # 분류·근거기반 답변이라 낮게 (덜 창의적, 더 일관적)
-        ),
+    # 제미나이 2.5 계열은 답변 전 'thinking'에도 토큰을 쓴다.
+    # 분류·근거기반 답변엔 thinking이 불필요하므로 꺼서 토큰을 답변에만 쓰게 한다.
+    config = types.GenerateContentConfig(
+        system_instruction=system,
+        max_output_tokens=max_tokens,
+        temperature=0.2,  # 분류·근거기반 답변이라 낮게 (덜 창의적, 더 일관적)
+        thinking_config=types.ThinkingConfig(thinking_budget=0),
     )
+
+    resp = client.models.generate_content(model=model, contents=user, config=config)
     return (resp.text or "").strip()
