@@ -51,4 +51,5 @@ class InquiryResponse(BaseModel):
     rule: RuleResult
     retrieved: list[RetrievedDoc]
     answer_draft: str
-    used_llm: bool = Field(..., description="실제 LLM 호출 여부 (False면 더미)")
+    used_llm: bool = Field(..., description="실제 LLM 호출 성공 여부 (False면 더미/폴백)")
+    llm_error: str | None = Field(None, description="LLM 호출 실패 시 짧은 사유 (없으면 None)")

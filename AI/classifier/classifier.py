@@ -1,16 +1,16 @@
 """
 1단계: LLM 분류.
 문의 텍스트 → 유형 + 핵심요청을 JSON으로 추출한다.
-키가 없으면 키워드 기반 간이 분류로 폴백 (1주차 데모용).
+키가 없거나 LLM 호출이 실패하면 키워드 기반 간이 분류로 폴백한다.
+(분류는 실패해도 시스템이 멈추지 않게 조용히 폴백 — 품질만 낮아짐)
 프롬프트는 AI/prompts.py 에 분리해 두었다.
 """
 import json
-from AI.llm import call_llm
+from AI.llm import call_llm, LLMError
 from AI.prompts import CLASSIFIER_SYSTEM
 from BE.core.config import settings
 from BE.core.schemas import Classification, InquiryType
 
-# 키 없을 때 쓰는 아주 단순한 키워드 폴백 (LLM 분류의 대용은 아님)
 _FALLBACK_KEYWORDS = {
     InquiryType.CAREER_CERT: ["경력", "경력증명", "경력인증", "수첩"],
     InquiryType.ERROR: ["로그인", "오류", "안 됩니다", "에러", "장애", "접속"],
@@ -29,7 +29,11 @@ def _fallback(text: str) -> Classification:
 
 
 def classify(text: str) -> Classification:
-    raw = call_llm(settings.classifier_model, CLASSIFIER_SYSTEM, text, max_tokens=256)
+    try:
+        raw = call_llm(settings.classifier_model, CLASSIFIER_SYSTEM, text, max_tokens=256)
+    except LLMError:
+        # LLM 호출 실패(429/503 등) → 키워드 폴백으로 조용히 대체
+        return _fallback(text)
 
     if raw is None:  # 키 없음 → 폴백
         return _fallback(text)
@@ -42,5 +46,4 @@ def classify(text: str) -> Classification:
             confidence=float(data.get("confidence", 0.5)),
         )
     except (json.JSONDecodeError, ValueError, KeyError):
-        # LLM이 형식을 어기거나 모르는 유형을 뱉으면 안전하게 폴백
         return _fallback(text)
