@@ -3,6 +3,6 @@ uvicorn[standard]==0.30.6
 pydantic==2.9.2
 pydantic-settings==2.5.2
 python-dotenv==1.0.1
-anthropic==0.39.0
-chromadb
+google-genai==1.7.0
+chromadb==1.5.9
 sentence-transformers

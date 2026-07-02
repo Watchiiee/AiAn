@@ -9,14 +9,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    anthropic_api_key: str = ""
-    classifier_model: str = "claude-haiku-4-5-20251001"
-    generator_model: str = "claude-sonnet-4-6"
+    # Google Gemini
+    gemini_api_key: str = ""
+    classifier_model: str = "gemini-2.0-flash"   # 분류: 빠르고 무료 한도 넉넉
+    generator_model: str = "gemini-2.0-flash"    # 답변 생성
+
     use_stub_when_no_key: bool = True
 
     @property
     def has_api_key(self) -> bool:
-        return bool(self.anthropic_api_key.strip())
+        return bool(self.gemini_api_key.strip())
 
 
 settings = Settings()
