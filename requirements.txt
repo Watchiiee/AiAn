@@ -3,6 +3,10 @@ uvicorn[standard]==0.30.6
 pydantic
 pydantic-settings
 python-dotenv==1.0.1
-google-genai==2.10.0
+
+# --- LLM: 현재 CLOVA Studio (requests 로 직접 호출) ---
+requests==2.32.3
+# google-genai==2.10.0   # (보존) Gemini 로 되돌릴 때 주석 해제
+
 chromadb==1.5.9
 sentence-transformers

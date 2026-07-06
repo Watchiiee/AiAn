@@ -28,6 +28,22 @@ def _fallback(text: str) -> Classification:
     return Classification(type=InquiryType.GENERAL, key_request=text[:50], confidence=0.2)
 
 
+def _normalize_confidence(value) -> float:
+    """
+    모델마다 confidence 단위가 다르다 (0~1 소수 vs 0~100 백분율).
+    - Gemini 등: 0.9
+    - CLOVA HCX-005 등: 90
+    어느 쪽이 와도 0~1 범위로 맞춘다. 1보다 크면 100으로 나눈다.
+    """
+    try:
+        c = float(value)
+    except (TypeError, ValueError):
+        return 0.5
+    if c > 1:
+        c = c / 100.0
+    return max(0.0, min(1.0, c))  # 0~1 범위로 안전하게 제한
+
+
 def classify(text: str) -> Classification:
     try:
         raw = call_llm(settings.classifier_model, CLASSIFIER_SYSTEM, text, max_tokens=256)
@@ -43,7 +59,7 @@ def classify(text: str) -> Classification:
         return Classification(
             type=InquiryType(data["type"]),
             key_request=data.get("key_request", text[:50]),
-            confidence=float(data.get("confidence", 0.5)),
+            confidence=_normalize_confidence(data.get("confidence", 0.5)),
         )
     except (json.JSONDecodeError, ValueError, KeyError):
         return _fallback(text)
