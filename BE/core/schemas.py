@@ -37,6 +37,13 @@ class RuleResult(BaseModel):
     department: str = Field(..., description="담당 부서")
 
 
+class AnswerConfidence(str, Enum):
+    """답변 확신도. 근거 문서로 얼마나 답할 수 있는지 나타낸다 (프론트 배지용)."""
+    SUFFICIENT = "sufficient"      # 근거 충분 → 자신 있게 답변
+    PARTIAL = "partial"            # 부분적 → 근접 답변 + 확인 필요
+    INSUFFICIENT = "insufficient"  # 근거 부족 → 답 못 함, 담당부서 안내
+
+
 # --- 3단계: RAG 검색된 근거 문서 한 조각 ---
 class RetrievedDoc(BaseModel):
     content: str
@@ -51,5 +58,9 @@ class InquiryResponse(BaseModel):
     rule: RuleResult
     retrieved: list[RetrievedDoc]
     answer_draft: str
+    answer_confidence: AnswerConfidence = Field(
+        AnswerConfidence.SUFFICIENT,
+        description="답변 확신도: sufficient(충분)/partial(확인필요)/insufficient(근거부족)"
+    )
     used_llm: bool = Field(..., description="실제 LLM 호출 성공 여부 (False면 더미/폴백)")
     llm_error: str | None = Field(None, description="LLM 호출 실패 시 짧은 사유 (없으면 None)")

@@ -21,6 +21,10 @@ class Settings(BaseSettings):
 
     use_stub_when_no_key: bool = True
 
+    # RAG 근거 판정: 검색 최고 score가 이 값 미만이면 '명백히 근거 없음'으로 보고
+    # LLM을 부르지 않고 바로 insufficient 처리한다. (실측: 관련 0.6~0.7 / 무관 0.3)
+    no_evidence_threshold: float = 0.4
+
     @property
     def has_api_key(self) -> bool:
         return bool(self.clova_api_key.strip())

@@ -22,12 +22,14 @@ def process_inquiry(text: str) -> InquiryResponse:
     docs = retrieve(text, cls)                 # 3. 검색   (AI)
 
     llm_error = None
+    from BE.core.schemas import AnswerConfidence
     try:
-        answer = generate(text, cls, rule, docs)   # 4. 답변 (AI)
+        answer, answer_confidence = generate(text, cls, rule, docs)   # 4. 답변 (AI)
     except LLMError as e:
         # 429/503 등 → 시스템 죽이지 않고 임시 답변 + 사유 표시
         llm_error = str(e)
         answer = fallback_answer(text, cls, rule, docs, reason=llm_error)
+        answer_confidence = AnswerConfidence.PARTIAL
 
     return InquiryResponse(
         original_text=text,
@@ -35,6 +37,7 @@ def process_inquiry(text: str) -> InquiryResponse:
         rule=rule,
         retrieved=docs,
         answer_draft=answer,
+        answer_confidence=answer_confidence,
         used_llm=settings.has_api_key and llm_error is None,
         llm_error=llm_error,
     )
