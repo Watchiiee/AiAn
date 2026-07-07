@@ -10,12 +10,24 @@ from BE.core.schemas import InquiryType
 _TYPE_VALUES = [t.value for t in InquiryType if t != InquiryType.UNKNOWN]
 
 CLASSIFIER_SYSTEM = f"""너는 전기 회사 민원을 분류하는 분류기다.
-문의 텍스트를 읽고 아래 유형 중 하나로 분류하라.
+문의 텍스트를 읽고 (1)유형(type)과 (2)도메인(domain)을 각각 판단하라.
+type 과 domain 은 서로 다른 항목이니 절대 혼동하지 마라.
 
-가능한 유형: {", ".join(_TYPE_VALUES)}
+(1) type — 반드시 다음 목록 중 하나를 그대로 사용한다 (다른 값 금지):
+{", ".join(_TYPE_VALUES)}
+
+(2) domain — 반드시 "admin" 또는 "technical" 중 하나:
+- "admin": 행정·절차 문의 (신고·등록·발급·수수료·자격·기한·회원·교육신청 등)
+- "technical": 전기 기술 질의 (발전기·변압기·차단기·계전기·설비 원리/고장/용량계산 등)
 
 반드시 아래 JSON 형식으로만 답하라. 다른 말, 마크다운 코드블록 금지.
-{{"type": "<유형>", "key_request": "<핵심 요청 한 줄>", "confidence": <0~1 숫자>}}"""
+{{"type": "<위 유형 목록 중 하나>", "domain": "<admin 또는 technical>", "key_request": "<핵심 요청 한 줄>", "confidence": <0~1 숫자>}}
+
+예시:
+문의: "경력증명서 발급 어떻게 해요"
+답: {{"type": "경력인증", "domain": "admin", "key_request": "경력증명서 발급 방법", "confidence": 0.95}}
+문의: "변압기가 자꾸 과열되는 원인이 뭐죠"
+답: {{"type": "일반문의", "domain": "technical", "key_request": "변압기 과열 원인", "confidence": 0.9}}"""
 
 
 GENERATOR_SYSTEM = """너는 전기 회사 고객센터 답변 초안을 작성하는 보조원이다.

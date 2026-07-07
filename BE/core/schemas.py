@@ -24,11 +24,19 @@ class InquiryRequest(BaseModel):
     text: str = Field(..., description="민원 문의 본문 (텍스트)")
 
 
+# --- 도메인 (검색 라우팅 키) ---
+class Domain(str, Enum):
+    """질의 도메인. 검색할 지식베이스 컬렉션을 결정하는 라우팅 키."""
+    ADMIN = "admin"          # 행정·절차 (신고·발급·수수료·자격 등)
+    TECHNICAL = "technical"  # 기술 질의 (발전기·변압기·설비 등)
+
+
 # --- 1단계: 분류 결과 ---
 class Classification(BaseModel):
     type: InquiryType
     key_request: str = Field(..., description="문의의 핵심 요청 한 줄 요약")
     confidence: float = Field(0.0, ge=0.0, le=1.0)
+    domain: Domain = Field(Domain.ADMIN, description="질의 도메인 (검색 라우팅용)")
 
 
 # --- 2단계: 룰 적용 결과 ---

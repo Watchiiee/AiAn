@@ -48,6 +48,12 @@ def retrieve(text: str, cls: Classification, top_k: int = 3) -> list[RetrievedDo
     """
     질문 text 와 의미가 가장 가까운 청크 top_k 개를 돌려준다.
     검색할 도메인은 분류 결과(cls.domain)를 따르며, 없으면 admin.
+
+    반환:
+      - 정상: 문서 리스트
+      - 컬렉션 자체가 없음(ingest 안 함): [_NOT_READY_DOC]
+      - 컬렉션은 있으나 결과 없음(예: technical 비어있음): [] (빈 리스트)
+        → generator 에서 근거 부족(insufficient)으로 자연스럽게 처리됨
     """
     domain = getattr(cls, "domain", None) or DEFAULT_DOMAIN
 
@@ -72,4 +78,5 @@ def retrieve(text: str, cls: Classification, top_k: int = 3) -> list[RetrievedDo
         score = 1.0 - float(dist)
         docs.append(RetrievedDoc(content=doc, source=source_label, score=round(score, 3)))
 
-    return docs or [_NOT_READY_DOC]
+    # 빈 컬렉션(예: 아직 안 채운 technical)이면 빈 리스트 → 근거부족으로 흐름
+    return docs
