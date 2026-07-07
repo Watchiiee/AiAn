@@ -1,32 +1,42 @@
 """
-3단계: RAG 검색 (진짜 ChromaDB 버전).
-질문을 임베딩해서 ChromaDB에서 가장 비슷한 청크를 찾는다.
+3단계: RAG 검색 (도메인 라우팅 버전).
+질문을 임베딩해서, 지정된 도메인의 컬렉션에서 가장 비슷한 청크를 찾는다.
 
-★ 사전 준비 ★ 먼저 `python -m AI.rag.ingest` 를 한 번 실행해
-   data/vector_db/ 에 벡터를 만들어 둬야 한다.
-   (아직 안 했으면 아래 폴백 안내 문구가 대신 나온다.)
+도메인 라우팅:
+    domain="admin"     → minwon_admin      (행정·절차)
+    domain="technical" → minwon_technical  (기술 질의)
+1단계에서는 분류가 아직 domain 을 안 주므로 기본값 admin 으로 동작한다
+(= 기존과 동일). 2단계에서 분류가 domain 을 넘겨주면 라우팅이 작동한다.
+
+★ 사전 준비 ★ 먼저 `python -m AI.rag.ingest` 실행 필요.
 """
 import chromadb
-from chromadb.errors import ChromaError
 
 from AI.embedder import embed_text
 from BE.core.schemas import RetrievedDoc, Classification
 
 VECTOR_DIR = "data/vector_db"
-COLLECTION_NAME = "minwon_kb"
 
-_collection = None  # 한 번만 연결
+DOMAIN_COLLECTIONS = {
+    "admin": "minwon_admin",
+    "technical": "minwon_technical",
+}
+DEFAULT_DOMAIN = "admin"
 
-
-def _get_collection():
-    global _collection
-    if _collection is None:
-        client = chromadb.PersistentClient(path=VECTOR_DIR)
-        _collection = client.get_collection(COLLECTION_NAME)
-    return _collection
+_client = None
+_collections: dict[str, object] = {}  # 도메인별 컬렉션 캐시
 
 
-# 아직 ingest 안 한 경우 보여줄 안내
+def _get_collection(domain: str):
+    global _client
+    coll_name = DOMAIN_COLLECTIONS.get(domain, DOMAIN_COLLECTIONS[DEFAULT_DOMAIN])
+    if coll_name not in _collections:
+        if _client is None:
+            _client = chromadb.PersistentClient(path=VECTOR_DIR)
+        _collections[coll_name] = _client.get_collection(coll_name)
+    return _collections[coll_name]
+
+
 _NOT_READY_DOC = RetrievedDoc(
     content="(지식베이스가 아직 준비되지 않았습니다. 터미널에서 `python -m AI.rag.ingest` 를 한 번 실행하세요.)",
     source="[안내] ingest 필요",
@@ -35,11 +45,15 @@ _NOT_READY_DOC = RetrievedDoc(
 
 
 def retrieve(text: str, cls: Classification, top_k: int = 3) -> list[RetrievedDoc]:
-    """질문 text 와 의미가 가장 가까운 청크 top_k 개를 돌려준다."""
+    """
+    질문 text 와 의미가 가장 가까운 청크 top_k 개를 돌려준다.
+    검색할 도메인은 분류 결과(cls.domain)를 따르며, 없으면 admin.
+    """
+    domain = getattr(cls, "domain", None) or DEFAULT_DOMAIN
+
     try:
-        collection = _get_collection()
+        collection = _get_collection(domain)
     except Exception:
-        # 컬렉션이 없음 = 아직 ingest 안 함
         return [_NOT_READY_DOC]
 
     query_vec = embed_text(text)
@@ -52,11 +66,9 @@ def retrieve(text: str, cls: Classification, top_k: int = 3) -> list[RetrievedDo
 
     for doc, meta, dist in zip(documents, metadatas, distances):
         meta = meta or {}
-        # 출처 = 파일명 + 제목 (답변 근거 표시 + 평가 점수용)
         src = meta.get("source", "?")
         heading = meta.get("heading", "")
         source_label = f"{src} > {heading}" if heading else src
-        # cosine distance(0~2) → 유사도 점수(1~-1)로 환산
         score = 1.0 - float(dist)
         docs.append(RetrievedDoc(content=doc, source=source_label, score=round(score, 3)))
 
