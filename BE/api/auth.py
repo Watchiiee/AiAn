@@ -15,7 +15,12 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(req: RegisterRequest, db: Session = Depends(get_db)):
-    """회원가입. 이메일 중복 시 409."""
+    """
+    회원가입. 이메일 중복 시 409.
+    보안상 일반 가입으로는 항상 GENERAL 권한만 부여한다.
+    담당자(STAFF) 권한은 운영자가 DB에서 직접 부여한다.
+      예: psql aian -c "UPDATE users SET role='STAFF' WHERE email='...';"
+    """
     existing = db.query(User).filter(User.email == req.email).first()
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 가입된 이메일입니다.")
@@ -23,7 +28,7 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
     user = User(
         email=req.email,
         password_hash=hash_password(req.password),
-        role=UserRole(req.role.value),
+        role=UserRole.GENERAL,  # 요청에 role이 와도 무시 — 항상 일반 회원으로 가입
     )
     db.add(user)
     db.commit()
