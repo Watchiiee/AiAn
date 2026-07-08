@@ -1,13 +1,15 @@
-import { NavLink } from "react-router-dom";
-
-function tabClass(active: boolean): string {
-  return [
-    "rounded-[9px] px-3.5 py-1.5 text-[13px] font-bold transition-colors",
-    active ? "bg-white text-[#2563eb] shadow-sm" : "text-[#64748b] hover:text-[#334155]",
-  ].join(" ");
-}
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
 export default function Header() {
+  const { isAuthenticated, session, logout } = useAuth();
+  const navigate = useNavigate();
+
+  function handleLogout() {
+    logout();
+    navigate("/login", { replace: true });
+  }
+
   return (
     <header className="sticky top-0 z-20 flex h-[60px] flex-none items-center justify-between border-b border-[#e2e8f0] bg-white px-[22px]">
       <div className="flex items-center gap-[11px]">
@@ -22,14 +24,25 @@ export default function Header() {
         </div>
       </div>
 
-      <nav className="inline-flex gap-1 rounded-[11px] bg-[#f1f5f9] p-1">
-        <NavLink to="/" end className={({ isActive }) => tabClass(isActive)}>
-          민원인
-        </NavLink>
-        <NavLink to="/admin" className={({ isActive }) => tabClass(isActive)}>
-          담당자
-        </NavLink>
-      </nav>
+      {isAuthenticated && session && (
+        <div className="flex items-center gap-3">
+          <div className="text-right leading-tight">
+            <div className="text-[13px] font-bold text-[#1e293b]">
+              {session.email}
+            </div>
+            <div className="text-[11px] font-semibold text-[#94a3b8]">
+              {session.role === "staff" ? "담당자" : "일반 사용자"}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="rounded-[9px] border border-[#e2e8f0] px-3 py-1.5 text-[12.5px] font-bold text-[#64748b] hover:bg-[#f8fafc]"
+          >
+            로그아웃
+          </button>
+        </div>
+      )}
     </header>
   );
 }

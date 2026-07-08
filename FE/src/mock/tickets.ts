@@ -7,8 +7,8 @@ import type { Ticket } from "../types/inquiry";
  *
  * 데모용으로 다양한 케이스를 섞어둠:
  *  - 긴급 우선순위
- *  - 낮은 확신도(미분류, 0.43)
- *  - LLM 생성 실패(answer_draft: null, llm_error 존재)
+ *  - 낮은 확신도(미분류, 0.43) + answer_confidence: partial
+ *  - LLM 생성 실패(answer_draft: null, llm_error 존재) + answer_confidence: insufficient
  *  - 정상/검토중/발송완료 상태
  */
 export const MOCK_TICKETS: Ticket[] = [
@@ -20,6 +20,7 @@ export const MOCK_TICKETS: Ticket[] = [
       type: "오류·장애",
       key_request: "자격증 발급 신청 결제 완료 후 시스템 오류로 접수 실패",
       confidence: 0.87,
+      domain: "admin",
     },
     rule: { priority: "긴급", department: "정보시스템팀" },
     retrieved: [
@@ -38,6 +39,7 @@ export const MOCK_TICKETS: Ticket[] = [
     ],
     answer_draft:
       "안녕하세요. 결제는 정상 완료되었으나 신청 건이 생성되지 않은 것으로 확인됩니다. 결제 내역을 기준으로 담당자가 수동으로 접수 처리해 드리며, 중복 결제는 발생하지 않으니 안심하셔도 됩니다. 마감 관련해서도 시스템 오류가 확인되어 불이익이 없도록 조치하겠습니다.",
+    answer_confidence: "sufficient",
     used_llm: true,
     llm_error: null,
     status: "신규",
@@ -49,6 +51,7 @@ export const MOCK_TICKETS: Ticket[] = [
       type: "일반문의",
       key_request: "전기안전관리자 미선임 시 벌금 문의",
       confidence: 0.9,
+      domain: "admin",
     },
     rule: { priority: "보통", department: "민원안내팀" },
     retrieved: [
@@ -67,6 +70,7 @@ export const MOCK_TICKETS: Ticket[] = [
     ],
     answer_draft:
       "안녕하세요. 전기안전관리자를 선임하지 않은 경우 관련 법령에 따라 500만원 이하의 벌금이 부과될 수 있습니다. 전기설비 사용 전 반드시 선임하셔야 하며, 선임 절차가 필요하시면 안내해 드리겠습니다.",
+    answer_confidence: "sufficient",
     used_llm: true,
     llm_error: null,
     status: "신규",
@@ -78,6 +82,7 @@ export const MOCK_TICKETS: Ticket[] = [
       type: "미분류",
       key_request: "요청 내용이 불명확하여 추가 확인 필요",
       confidence: 0.43,
+      domain: "admin",
     },
     rule: { priority: "보통", department: "민원안내팀" },
     retrieved: [
@@ -90,6 +95,7 @@ export const MOCK_TICKETS: Ticket[] = [
     ],
     answer_draft:
       "안녕하세요. 문의 주신 내용만으로는 정확한 요청 사항을 파악하기 어렵습니다. 어떤 업무에 대한 문의이신지 조금 더 구체적으로 알려주시면 신속히 안내해 드리겠습니다.",
+    answer_confidence: "partial",
     used_llm: true,
     llm_error: null,
     status: "검토중",
@@ -102,6 +108,7 @@ export const MOCK_TICKETS: Ticket[] = [
       type: "경력인증",
       key_request: "경력증명서 발급 시 필요 서류 문의",
       confidence: 0.82,
+      domain: "admin",
     },
     rule: { priority: "높음", department: "자격관리팀" },
     retrieved: [
@@ -119,6 +126,7 @@ export const MOCK_TICKETS: Ticket[] = [
       },
     ],
     answer_draft: null,
+    answer_confidence: "insufficient",
     used_llm: false,
     llm_error: "LLMTimeoutError: upstream 504 after 30000ms",
     status: "신규",
@@ -131,6 +139,7 @@ export const MOCK_TICKETS: Ticket[] = [
       type: "변경",
       key_request: "회원정보(소속·연락처) 변경 방법 문의",
       confidence: 0.94,
+      domain: "admin",
     },
     rule: { priority: "보통", department: "회원관리팀" },
     retrieved: [
@@ -143,6 +152,7 @@ export const MOCK_TICKETS: Ticket[] = [
     ],
     answer_draft:
       "안녕하세요. 회원정보 변경은 홈페이지 로그인 후 [마이페이지 > 회원정보 수정] 메뉴에서 소속 회사와 연락처를 직접 변경하실 수 있습니다. 변경이 어려우시면 도와드리겠습니다.",
+    answer_confidence: "sufficient",
     used_llm: true,
     llm_error: null,
     status: "발송완료",

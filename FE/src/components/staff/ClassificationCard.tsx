@@ -26,6 +26,9 @@ export default function ClassificationCard({
 
       <div className="mb-3 flex items-center gap-2">
         <span className={typeBadgeClass(type, "lg")}>{type}</span>
+        <span className="rounded-md bg-[#f8fafc] px-2 py-0.5 text-[10.5px] font-bold text-[#94a3b8]">
+          {classification.domain === "technical" ? "기술질의" : "행정문의"}
+        </span>
         {lowConf && (
           <span className="inline-flex items-center gap-1 rounded-md border border-[#fecaca] bg-[#fef2f2] px-2.5 py-1 text-[11px] font-extrabold text-[#dc2626]">
             ⚠ 분류 불확실

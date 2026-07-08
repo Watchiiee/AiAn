@@ -1,18 +1,31 @@
+import type { AnswerConfidence } from "../../types/inquiry";
+import { answerConfidenceBadgeClass, answerConfidenceLabel } from "../../utils/badges";
+
 interface DraftEditorProps {
   value: string;
+  answerConfidence: AnswerConfidence;
   onChange: (value: string) => void;
 }
 
-export default function DraftEditor({ value, onChange }: DraftEditorProps) {
+export default function DraftEditor({
+  value,
+  answerConfidence,
+  onChange,
+}: DraftEditorProps) {
   return (
     <div className="rounded-2xl border border-[#e2e8f0] bg-white px-[22px] py-5">
-      <div className="mb-[11px] flex items-center justify-between">
+      <div className="mb-[11px] flex flex-wrap items-center justify-between gap-2">
         <span className="text-[13.5px] font-extrabold text-[#1e293b]">
           답변 초안
         </span>
-        <span className="inline-flex items-center gap-1.5 rounded-md border border-[#bfdbfe] bg-[#eff6ff] px-2.5 py-1 text-[11px] font-extrabold text-[#2563eb]">
-          ✎ AI 초안 · 검토 필요
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className={answerConfidenceBadgeClass(answerConfidence)}>
+            {answerConfidenceLabel(answerConfidence)}
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-[#bfdbfe] bg-[#eff6ff] px-2.5 py-1 text-[11px] font-extrabold text-[#2563eb]">
+            ✎ AI 초안 · 검토 필요
+          </span>
+        </div>
       </div>
       <textarea
         value={value}

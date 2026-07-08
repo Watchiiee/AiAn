@@ -69,7 +69,11 @@ export default function TicketDetail({
       </div>
 
       <div className="mb-4">
-        <DraftEditor value={draft} onChange={onDraftChange} />
+        <DraftEditor
+          value={draft}
+          answerConfidence={ticket.answer_confidence}
+          onChange={onDraftChange}
+        />
       </div>
 
       <div className="mb-4">

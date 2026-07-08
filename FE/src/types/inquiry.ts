@@ -15,11 +15,17 @@ export type Priority = "긴급" | "높음" | "보통";
 
 export type TicketStatus = "신규" | "검토중" | "발송완료";
 
+export type AnswerConfidence = "sufficient" | "partial" | "insufficient";
+
+export type InquiryDomain = "admin" | "technical";
+
 export interface Classification {
   type: InquiryType;
   key_request: string;
   /** 0~1. 0.5 미만이면 "분류 불확실" 표시 */
   confidence: number;
+  /** "admin"(행정) 또는 "technical"(기술질의). v2에서 추가됨 */
+  domain: InquiryDomain;
 }
 
 export interface Rule {
@@ -47,6 +53,8 @@ export interface InquiryResponse {
   rule: Rule;
   retrieved: RetrievedDoc[];
   answer_draft: string | null;
+  /** 답변이 근거로 얼마나 뒷받침되는지. v2에서 추가됨 */
+  answer_confidence: AnswerConfidence;
   used_llm: boolean;
   /** null 이면 정상, 값이 있으면 LLM 생성 실패 */
   llm_error: string | null;
