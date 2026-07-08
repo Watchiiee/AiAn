@@ -14,3 +14,9 @@ sentence-transformers
 # --- DB: 문의 이력 저장 (PostgreSQL) ---
 sqlalchemy
 psycopg2-binary
+
+# --- 인증: JWT 로그인 ---
+# (passlib는 최신 bcrypt와 호환성 버그가 있어 bcrypt를 직접 사용)
+bcrypt
+python-jose[cryptography]
+python-multipart

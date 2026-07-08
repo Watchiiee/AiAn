@@ -72,3 +72,35 @@ class InquiryResponse(BaseModel):
     )
     used_llm: bool = Field(..., description="실제 LLM 호출 성공 여부 (False면 더미/폴백)")
     llm_error: str | None = Field(None, description="LLM 호출 실패 시 짧은 사유 (없으면 None)")
+
+
+# --- 인증: 회원가입/로그인 ---
+class UserRoleSchema(str, Enum):
+    GENERAL = "general"
+    STAFF = "staff"
+
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str = Field(..., min_length=8, description="8자 이상")
+    role: UserRoleSchema = UserRoleSchema.GENERAL
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: UserRoleSchema
+
+
+class UserResponse(BaseModel):
+    id: int
+    email: str
+    role: UserRoleSchema
+
+    class Config:
+        from_attributes = True
