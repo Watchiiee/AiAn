@@ -8,7 +8,7 @@ DB 테이블 모델.
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, JSON, Enum
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, JSON, Enum, ForeignKey
 from BE.db.database import Base
 
 
@@ -18,6 +18,9 @@ class InquiryRecord(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+    # 어떤 사용자가 등록했는지 (내 문의 조회에 사용, 키워드 검색 대신 로그인 사용자로 자동 필터링)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
 
     # 원문·분류 결과
     original_text = Column(String, nullable=False)

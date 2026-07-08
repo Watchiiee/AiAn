@@ -104,3 +104,44 @@ class UserResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# --- 문의 접수/조회 (사용자에게 답변을 바로 보여주지 않고, 접수만 확인시켜준다) ---
+class InquirySubmitResponse(BaseModel):
+    """POST /api/inquiry 응답. 분류·답변 등 내부 처리결과는 담지 않는다."""
+    id: int
+    message: str = "정상적으로 접수되었습니다."
+    created_at: str
+
+
+class InquiryStatus(str, Enum):
+    PENDING = "pending"    # 담당자 검토 전 (사용자에게 답변 미공개)
+    ANSWERED = "answered"  # 담당자 검토·승인 완료 (답변 공개)
+
+
+class InquiryStatusResponse(BaseModel):
+    """GET /api/inquiry/my, /my/{id} 응답. 검토 전엔 답변을 담지 않는다."""
+    id: int
+    created_at: str
+    original_text: str
+    department: str
+    priority: str
+    status: InquiryStatus
+    answer: str | None = None  # pending이면 None
+
+
+class ReviewRequest(BaseModel):
+    """담당자가 문의를 검토·승인할 때. final_answer 를 안 주면 AI 초안을 그대로 승인."""
+    final_answer: str | None = None
+
+
+class PendingInquiryResponse(BaseModel):
+    """GET /api/inquiry/pending (담당자용 검토 대기 큐) 응답 항목."""
+    id: int
+    created_at: str
+    original_text: str
+    inquiry_type: str
+    department: str
+    priority: str
+    answer_draft: str
+    answer_confidence: AnswerConfidence
