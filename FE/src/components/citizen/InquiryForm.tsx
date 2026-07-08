@@ -3,10 +3,10 @@ import { EXAMPLE_CHIPS } from "../../constants/options";
 
 interface InquiryFormProps {
   onSubmit: (text: string) => void;
-  onGoLookup: () => void;
+  onGoHistory: () => void;
 }
 
-export default function InquiryForm({ onSubmit, onGoLookup }: InquiryFormProps) {
+export default function InquiryForm({ onSubmit, onGoHistory }: InquiryFormProps) {
   const [text, setText] = useState("");
   const canSubmit = text.trim().length > 0;
 
@@ -61,10 +61,10 @@ export default function InquiryForm({ onSubmit, onGoLookup }: InquiryFormProps) 
       <div className="mt-[18px] text-center">
         <button
           type="button"
-          onClick={onGoLookup}
+          onClick={onGoHistory}
           className="text-[13px] font-semibold text-[#64748b] hover:text-[#334155]"
         >
-          내 문의 조회 →
+          내 문의함 →
         </button>
       </div>
     </div>

@@ -1,23 +1,22 @@
 import { useState } from "react";
 import InquiryForm from "../components/citizen/InquiryForm";
 import SubmittedCard from "../components/citizen/SubmittedCard";
-import LookupPanel from "../components/citizen/LookupPanel";
+import MyInquiries from "../components/citizen/MyInquiries";
 import Spinner from "../components/common/Spinner";
 import { useSubmitInquiry } from "../hooks/useSubmitInquiry";
-import { generateTicketNo } from "../utils/format";
 
-type View = "form" | "done" | "lookup";
+type View = "form" | "done" | "history";
 
 export default function CitizenPage() {
   const [view, setView] = useState<View>("form");
-  const [ticketNo, setTicketNo] = useState<string | null>(null);
+  const [inquiryId, setInquiryId] = useState<number | null>(null);
   const submit = useSubmitInquiry();
 
   function handleSubmit(text: string) {
     submit.mutate(text, {
-      onSuccess: () => {
-        // 민원인은 AI 결과를 보지 않는다. 접수 확인 + 접수번호만.
-        setTicketNo(generateTicketNo());
+      onSuccess: (res) => {
+        // v3부터 등록 응답엔 답변이 없다. 접수 확인(id)만 보여준다.
+        setInquiryId(res.id);
         setView("done");
       },
     });
@@ -36,7 +35,7 @@ export default function CitizenPage() {
           <>
             <InquiryForm
               onSubmit={handleSubmit}
-              onGoLookup={() => setView("lookup")}
+              onGoHistory={() => setView("history")}
             />
             {submit.isError && (
               <p className="mt-4 rounded-xl border border-[#fecaca] bg-[#fef2f2] p-3 text-center text-[13px] font-semibold text-[#dc2626]">
@@ -44,17 +43,17 @@ export default function CitizenPage() {
               </p>
             )}
           </>
-        ) : view === "done" && ticketNo ? (
+        ) : view === "done" && inquiryId !== null ? (
           <SubmittedCard
-            ticketNo={ticketNo}
+            inquiryId={inquiryId}
             onNewInquiry={() => {
               submit.reset();
               setView("form");
             }}
-            onGoLookup={() => setView("lookup")}
+            onGoHistory={() => setView("history")}
           />
         ) : (
-          <LookupPanel onBack={() => setView("form")} />
+          <MyInquiries onBack={() => setView("form")} />
         )}
       </div>
     </main>

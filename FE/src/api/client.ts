@@ -85,3 +85,15 @@ export function apiGet<TResponse>(
 ): Promise<TResponse> {
   return request<TResponse>(path, { method: "GET" }, options);
 }
+
+export function apiPatch<TBody, TResponse>(
+  path: string,
+  body: TBody,
+  options?: RequestOptions,
+): Promise<TResponse> {
+  return request<TResponse>(
+    path,
+    { method: "PATCH", body: JSON.stringify(body) },
+    options,
+  );
+}

@@ -1,13 +1,13 @@
 interface SubmittedCardProps {
-  ticketNo: string;
+  inquiryId: number;
   onNewInquiry: () => void;
-  onGoLookup: () => void;
+  onGoHistory: () => void;
 }
 
 export default function SubmittedCard({
-  ticketNo,
+  inquiryId,
   onNewInquiry,
-  onGoLookup,
+  onGoHistory,
 }: SubmittedCardProps) {
   return (
     <div className="animate-[fadeup_0.4s_ease_both]">
@@ -30,48 +30,36 @@ export default function SubmittedCard({
           문의가 정상적으로 접수되었습니다
         </h2>
         <p className="mb-[22px] text-[13.5px] leading-relaxed text-[#64748b]">
-          담당자 확인 후 등록하신 연락처로 안내드립니다.
+          담당자 검토 후 답변이 확정되면 내 문의함에서 확인하실 수 있습니다.
         </p>
 
         <div className="rounded-xl border border-[#e2e8f0] bg-[#f8fafc] p-[18px] text-left">
-          <div className="flex items-center justify-between border-b border-[#e2e8f0] pb-[13px]">
+          <div className="flex items-center justify-between">
             <span className="text-[12.5px] font-semibold text-[#64748b]">
-              접수번호
+              문의 번호
             </span>
             <span className="text-sm font-extrabold tracking-wide text-[#2563eb]">
-              {ticketNo}
+              #{inquiryId}
             </span>
-          </div>
-          <div className="flex justify-between pt-3">
-            <span className="text-[12.5px] font-semibold text-[#64748b]">
-              예상 담당부서
-            </span>
-            <span className="text-[13px] font-bold">민원안내팀</span>
-          </div>
-          <div className="flex justify-between pt-[9px]">
-            <span className="text-[12.5px] font-semibold text-[#64748b]">
-              예상 처리시간
-            </span>
-            <span className="text-[13px] font-bold">영업일 기준 1~2일</span>
           </div>
         </div>
       </div>
 
       <button
         type="button"
-        onClick={onNewInquiry}
+        onClick={onGoHistory}
         className="mt-3.5 w-full rounded-[13px] bg-[#2563eb] py-[15px] text-[15px] font-bold text-white hover:bg-[#1d4ed8]"
       >
-        새 문의 등록
+        내 문의함 보기
       </button>
 
       <div className="mt-4 text-center">
         <button
           type="button"
-          onClick={onGoLookup}
+          onClick={onNewInquiry}
           className="text-[13px] font-semibold text-[#64748b] hover:text-[#334155]"
         >
-          내 문의 조회 →
+          새 문의 등록하기
         </button>
       </div>
     </div>

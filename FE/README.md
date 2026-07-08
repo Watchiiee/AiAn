@@ -72,58 +72,107 @@ npm run dev          # http://localhost:5173
 
 ```
 src/
-├─ main.tsx                  # 진입점 (QueryClient + Router 주입)
-├─ App.tsx                   # 라우팅 (/ = 민원인, /admin = 담당자)
-├─ index.css                 # Tailwind + Pretendard + 커스텀 애니메이션
+├─ main.tsx                  # 진입점 (QueryClient + AuthProvider + Router 주입)
+├─ App.tsx                   # 라우팅 (/login, /register, / = 일반, /admin = 담당자)
+├─ index.css                 # Tailwind + 커스텀 애니메이션 (Pretendard는 index.html)
 │
-├─ types/inquiry.ts          # 백엔드 응답 타입 (API 스펙 그대로)
-├─ constants/options.ts      # 부서·우선순위·칩·임계값
-├─ mock/tickets.ts           # 담당자 인박스 목업 (백엔드 목록 API 생기면 교체)
+├─ types/
+│  ├─ inquiry.ts             # 백엔드 응답 타입 (v3: 등록/내문의함/검토대기/승인)
+│  └─ auth.ts                # 로그인/회원가입 타입
+├─ constants/options.ts      # 예시 칩·필터·정렬 우선순위
 │
 ├─ api/
-│  ├─ client.ts              # fetch 래퍼 (VITE_API_BASE)
-│  └─ inquiry.ts             # POST /api/inquiry
+│  ├─ client.ts              # fetch 래퍼: 토큰 자동 첨부 + 401 시 자동 로그아웃 이벤트
+│  ├─ auth.ts                # POST /api/auth/register, /api/auth/login
+│  └─ inquiry.ts             # POST /api/inquiry, GET /my, GET /my/{id}, GET /pending, PATCH /{id}/review
+│
+├─ context/AuthContext.tsx   # 로그인 세션 상태 (localStorage 저장, 401 이벤트 구독)
+├─ lib/
+│  ├─ queryClient.ts
+│  └─ authStorage.ts         # localStorage 읽기/쓰기 + 전역 401 이벤트 발행
 │
 ├─ hooks/
-│  ├─ useSubmitInquiry.ts    # 문의 제출 (react-query mutation)
-│  └─ useTickets.ts          # 인박스 목록 (react-query query, 지금은 목업)
+│  ├─ useSubmitInquiry.ts    # 문의 등록 (접수 확인만 옴)
+│  ├─ useMyInquiries.ts      # 내 문의 목록 (로그인 기반, 검색 없음)
+│  ├─ usePendingInquiries.ts # 담당자 검토 대기 목록
+│  └─ useReviewInquiry.ts    # 담당자 승인 (그대로/수정)
 │
-├─ lib/queryClient.ts        # React Query 설정
 ├─ utils/
 │  ├─ badges.ts              # 배지/색상 → Tailwind 클래스
-│  └─ format.ts              # 접수번호·확신도·정렬
+│  └─ format.ts              # 날짜 표시·우선순위 정렬
 │
 ├─ pages/
-│  ├─ CitizenPage.tsx        # 민원인: 입력 → 접수완료 → 조회
-│  └─ StaffPage.tsx          # 담당자: 인박스 + 상세 (편집 상태 관리)
+│  ├─ LoginPage.tsx          # 로그인
+│  ├─ RegisterPage.tsx       # 회원가입 (가입은 항상 general)
+│  ├─ CitizenPage.tsx        # 일반 사용자: 입력 → 접수완료 → 내 문의함
+│  └─ StaffPage.tsx          # 담당자: 검토 대기 목록 + 상세(승인)
 │
 └─ components/
-   ├─ Header.tsx             # 로고 + 역할 전환 탭
+   ├─ Header.tsx             # 로고 + 로그인한 사용자 정보 + 로그아웃
+   ├─ ProtectedRoute.tsx     # 로그인 필요 + role 검사 라우트 가드
    ├─ common/Spinner.tsx
    ├─ citizen/
    │  ├─ InquiryForm.tsx     # 입력창 + 예시 칩
-   │  ├─ SubmittedCard.tsx   # 접수 완료 (접수번호)
-   │  └─ LookupPanel.tsx     # 내 문의 조회
+   │  ├─ SubmittedCard.tsx   # 접수 완료 (실제 문의 id 표시)
+   │  ├─ MyInquiries.tsx     # 내 문의함 목록 (상태 필터: 전체/대기중/완료)
+   │  └─ MyInquiryItem.tsx   # 목록 항목 (펼치면 답변 표시)
    └─ staff/
-      ├─ Inbox.tsx           # 인박스 (필터 + 정렬)
+      ├─ Inbox.tsx           # 검토 대기 목록 (우선순위 필터 + 정렬)
       ├─ FilterBar.tsx
       ├─ InboxItem.tsx
-      ├─ TicketDetail.tsx    # 상세 (아래 카드들 조합)
-      ├─ ClassificationCard.tsx  # AI 분류 + 확신도 바
-      ├─ RuleCard.tsx            # 우선순위·부서 재배정
-      ├─ DraftEditor.tsx         # 편집 가능한 AI 초안
-      ├─ EvidenceList.tsx        # RAG 근거 문서 (유사도/근거약함)
-      └─ LlmErrorBanner.tsx      # LLM 실패 배너
+      ├─ TicketDetail.tsx    # 원문 + 초안 + [그대로 승인]/[수정 후 승인]
+      └─ DraftEditor.tsx     # 편집 가능한 AI 초안 + answer_confidence 배지
 ```
 
 ---
 
-## 5. 백엔드 연동 메모
+## 5. 인증 흐름
 
-- **민원인 화면**은 AI 결과(초안·근거)를 보여주지 않습니다. 제출 → "접수 완료"만.
-  (제출 자체는 실제 `POST /api/inquiry` 를 호출하지만 응답의 AI 내용은 쓰지 않음)
-- **담당자 화면**은 지금 목업(`mock/tickets.ts`)으로 목록을 보여줍니다.
-  백엔드에 목록 조회 API(예: `GET /api/inquiries`)가 생기면
-  `hooks/useTickets.ts` 의 `queryFn` 만 fetch 로 바꾸면 됩니다.
-- `llm_error` 가 있으면 상세 상단에 실패 배너, `answer_draft` 는 비어 담당자가 직접 작성.
-- `retrieved[].score <= 0.4` 면 "근거 약함", `confidence < 0.5` 면 "분류 불확실".
+- `/login`, `/register` 는 누구나 접근 가능.
+- `/`(일반 사용자), `/admin`(담당자)은 `ProtectedRoute` 로 보호됨.
+  - 로그인 안 했으면 `/login` 으로 리다이렉트.
+  - 로그인은 했지만 role 이 안 맞으면(`general`이 `/admin` 접근 등) 자기 홈으로 리다이렉트.
+- 로그인 성공 시 `access_token` + `role` 을 `localStorage`(`aian_auth` 키)에 저장.
+- 이후 모든 인증 필요 요청에 `Authorization: Bearer <토큰>` 자동 첨부 (`api/client.ts`).
+- 토큰 만료/무효로 401 이 오면 `client.ts` 가 전역 이벤트(`aian:unauthorized`)를 쏘고,
+  `AuthContext` 가 이를 구독해 자동 로그아웃 → 다음 렌더에서 `ProtectedRoute` 가 `/login` 으로 보냄.
+- 회원가입은 항상 `role: general` 로 생성됨(서버가 강제).
+
+---
+
+## 6. 문의 처리 흐름 (v3)
+
+백엔드가 "등록"과 "결과 확인"을 분리했다. 반드시 이 순서로 이해할 것:
+
+```
+일반 사용자          POST /api/inquiry           담당자
+  등록  ───────────────────────────────▶   (답변 없음, 접수 확인 id만)
+                                                    │
+                                          GET /api/inquiry/pending
+                                          (AI 초안 + answer_confidence 확인)
+                                                    │
+                                          PATCH /api/inquiry/{id}/review
+                                          (그대로 승인 / 수정 후 승인)
+                                                    │
+  GET /api/inquiry/my ◀──────────────────────────┘
+  (status: answered 로 바뀌고 answer 가 채워짐)
+```
+
+**일반 사용자 화면**
+- 문의 등록 직후에는 AI 결과를 전혀 보여주지 않는다 (`answer_draft` 자체가 응답에 없음).
+  `POST /api/inquiry` 응답은 `{ id, message, created_at }` 뿐이라, 접수 완료 화면엔 이 `id`만 표시.
+- "내 문의함"은 키워드 검색이 아니라 `GET /api/inquiry/my` 를 그대로 호출한다. 토큰만 있으면
+  로그인한 사람 것만 자동으로 온다. `status: "pending"` 이면 "답변 대기중" 표시하고 `answer` 는 항상 null,
+  `"answered"` 면 `answer` 내용을 펼쳐서 보여준다.
+
+**담당자 화면**
+- 목록은 `GET /api/inquiry/pending` 실제 API로 채운다 (더 이상 목업 아님).
+- 이 API 응답에는 RAG 근거 문서, LLM 실패 사유, 분류 확신도, `domain` 이 **없다** — v1/v2에 있던
+  근거문서 카드·LLM 실패 배너·확신도 바·분류 카드는 데이터가 없으므로 화면에서 제거했다.
+- 부서 재배정 API도 없어져서 "부서 재배정" 버튼도 제거했다. 지금 담당자가 할 수 있는 액션은
+  오직 승인뿐이다: **"초안 그대로 승인"**(`final_answer: null`) 또는 초안을 고친 뒤
+  **"수정한 내용으로 승인"**(`final_answer: 수정된 텍스트`).
+- 승인하면 그 건은 `pending` 목록에서 즉시 빠진다(쿼리 무효화로 자동 새로고침).
+
+**주의**: 백엔드가 나중에 근거문서/재배정 API를 다시 추가하면, 그때 관련 카드를 되살리면 된다.
+지금은 실제로 오는 데이터만 화면에 반영했다.

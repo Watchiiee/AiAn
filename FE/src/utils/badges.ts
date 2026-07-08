@@ -1,10 +1,4 @@
-import type {
-  Priority,
-  TicketStatus,
-  InquiryType,
-  AnswerConfidence,
-} from "../types/inquiry";
-import { WEAK_SCORE_THRESHOLD } from "../constants/options";
+import type { Priority, RecordStatus, InquiryType, AnswerConfidence } from "../types/inquiry";
 
 // 디자인의 색상 규칙을 Tailwind 클래스로 옮긴 헬퍼들.
 // 정확한 브랜드 색을 맞추려고 일부는 arbitrary value(#hex)를 사용한다.
@@ -36,18 +30,17 @@ export function priorityDotClass(p: Priority): string {
   }
 }
 
-/** 상태 배지 */
-export function statusBadgeClass(s: TicketStatus): string {
+/** 문의 처리 상태 배지 (사용자 쪽: 답변 대기중 / 답변 완료) */
+export function recordStatusBadgeClass(s: RecordStatus): string {
   const base =
     "inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-extrabold border";
-  switch (s) {
-    case "신규":
-      return `${base} bg-[#eff6ff] text-[#2563eb] border-[#bfdbfe]`;
-    case "검토중":
-      return `${base} bg-[#fffbeb] text-[#d97706] border-[#fde68a]`;
-    case "발송완료":
-      return `${base} bg-[#f0fdf4] text-[#16a34a] border-[#bbf7d0]`;
-  }
+  return s === "answered"
+    ? `${base} bg-[#f0fdf4] text-[#16a34a] border-[#bbf7d0]`
+    : `${base} bg-[#fffbeb] text-[#d97706] border-[#fde68a]`;
+}
+
+export function recordStatusLabel(s: RecordStatus): string {
+  return s === "answered" ? "답변 완료" : "답변 대기중";
 }
 
 /** 유형 배지 (기본 회색 톤. 긴급/오류 계열만 살짝 강조) */
@@ -63,21 +56,7 @@ export function typeBadgeClass(type: InquiryType, size: "sm" | "lg" = "sm"): str
   return `${base} bg-[#f1f5f9] text-[#475569] border-[#e2e8f0]`;
 }
 
-/** 유사도 점수 배지 */
-export function scoreBadgeClass(score: number): string {
-  const weak = score <= WEAK_SCORE_THRESHOLD;
-  const base =
-    "flex-none rounded-md px-2 py-0.5 text-[11px] font-extrabold border";
-  return weak
-    ? `${base} bg-[#fffbeb] text-[#d97706] border-[#fde68a]`
-    : `${base} bg-[#f0fdf4] text-[#16a34a] border-[#bbf7d0]`;
-}
-
-export function isWeakScore(score: number): boolean {
-  return score <= WEAK_SCORE_THRESHOLD;
-}
-
-/** 답변이 근거로 얼마나 뒷받침되는지 (sufficient/partial/insufficient) */
+/** 답변이 근거로 얼마나 뒷받침되는지 (sufficient/partial/insufficient) — 담당자 검토용 */
 export function answerConfidenceLabel(v: AnswerConfidence): string {
   switch (v) {
     case "sufficient":

@@ -1,24 +1,14 @@
-import type { Ticket, TicketStatus } from "../../types/inquiry";
-import {
-  priorityBadgeClass,
-  priorityDotClass,
-  typeBadgeClass,
-  statusBadgeClass,
-} from "../../utils/badges";
+import type { PendingInquiry } from "../../types/inquiry";
+import { priorityBadgeClass, priorityDotClass, typeBadgeClass } from "../../utils/badges";
+import { formatDateTime } from "../../utils/format";
 
 interface InboxItemProps {
-  ticket: Ticket;
-  status: TicketStatus;
+  inquiry: PendingInquiry;
   selected: boolean;
   onSelect: () => void;
 }
 
-export default function InboxItem({
-  ticket,
-  status,
-  selected,
-  onSelect,
-}: InboxItemProps) {
+export default function InboxItem({ inquiry, selected, onSelect }: InboxItemProps) {
   return (
     <div
       onClick={onSelect}
@@ -30,27 +20,25 @@ export default function InboxItem({
       ].join(" ")}
     >
       <div className="mb-[7px] flex items-center gap-1.5">
-        <span className={priorityBadgeClass(ticket.rule.priority)}>
-          <span className={priorityDotClass(ticket.rule.priority)} />
-          {ticket.rule.priority}
+        <span className={priorityBadgeClass(inquiry.priority)}>
+          <span className={priorityDotClass(inquiry.priority)} />
+          {inquiry.priority}
         </span>
-        <span className={typeBadgeClass(ticket.classification.type)}>
-          {ticket.classification.type}
+        <span className={typeBadgeClass(inquiry.inquiry_type)}>
+          {inquiry.inquiry_type}
         </span>
-        <span className="flex-1" />
-        <span className={statusBadgeClass(status)}>{status}</span>
       </div>
 
       <p className="mb-1.5 line-clamp-2 text-[13.5px] font-semibold leading-snug text-[#1e293b]">
-        {ticket.original_text}
+        {inquiry.original_text}
       </p>
 
       <div className="flex items-center gap-2 text-[11.5px] text-[#94a3b8]">
-        <span className="font-semibold text-[#64748b]">
-          {ticket.rule.department}
-        </span>
+        <span className="font-semibold text-[#64748b]">{inquiry.department}</span>
         <span>·</span>
-        <span>{ticket.ticket_id}</span>
+        <span>#{inquiry.id}</span>
+        <span>·</span>
+        <span>{formatDateTime(inquiry.created_at)}</span>
       </div>
     </div>
   );

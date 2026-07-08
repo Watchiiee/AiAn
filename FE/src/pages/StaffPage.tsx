@@ -1,36 +1,51 @@
-import { useState, useRef, useCallback } from "react";
-import type { Ticket, Priority, TicketStatus } from "../types/inquiry";
+import { useEffect, useRef, useState } from "react";
 import Inbox from "../components/staff/Inbox";
 import TicketDetail from "../components/staff/TicketDetail";
 import Spinner from "../components/common/Spinner";
-import { useTickets } from "../hooks/useTickets";
-
-// 담당자가 수정한 값(초안·부서·우선순위·상태)을 티켓 id 별로 덮어쓰는 맵.
-type Overrides<T> = Record<string, T>;
+import { usePendingInquiries } from "../hooks/usePendingInquiries";
+import { useReviewInquiry } from "../hooks/useReviewInquiry";
 
 export default function StaffPage() {
-  const { data: tickets, isLoading, isError } = useTickets();
+  const { data: inquiries, isLoading, isError } = usePendingInquiries();
+  const review = useReviewInquiry();
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [priorityFilter, setPriorityFilter] = useState("전체");
-  const [statusFilter, setStatusFilter] = useState("전체");
-
-  const [statuses, setStatuses] = useState<Overrides<TicketStatus>>({});
-  const [drafts, setDrafts] = useState<Overrides<string>>({});
-  const [depts, setDepts] = useState<Overrides<string>>({});
-  const [priorities, setPriorities] = useState<Overrides<Priority>>({});
+  const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>();
-
-  const statusOf = useCallback(
-    (t: Ticket): TicketStatus => statuses[t.ticket_id] ?? t.status,
-    [statuses],
-  );
 
   function showToast(message: string) {
     setToast(message);
     clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 2200);
+  }
+
+  const list = inquiries ?? [];
+  const effectiveSelectedId = selectedId ?? list[0]?.id ?? null;
+  const selected = list.find((t) => t.id === effectiveSelectedId) ?? null;
+
+  // 승인되면 목록에서 사라지므로, 선택된 항목이 없어지면 첫 항목으로 옮겨준다.
+  useEffect(() => {
+    if (selectedId !== null && !list.some((t) => t.id === selectedId)) {
+      setSelectedId(null);
+    }
+  }, [list, selectedId]);
+
+  function handleApprove(id: number, finalAnswer: string | null) {
+    review.mutate(
+      { id, finalAnswer },
+      {
+        onSuccess: () => {
+          showToast(
+            finalAnswer === null
+              ? "AI 초안 그대로 승인했습니다"
+              : "수정한 내용으로 승인했습니다",
+          );
+        },
+        onError: () => showToast("승인에 실패했어요. 다시 시도해 주세요."),
+      },
+    );
   }
 
   if (isLoading) {
@@ -40,71 +55,45 @@ export default function StaffPage() {
       </main>
     );
   }
-  if (isError || !tickets) {
+  if (isError) {
     return (
       <main className="flex flex-1 items-center justify-center">
         <p className="text-[14px] text-[#dc2626]">
-          민원 목록을 불러오지 못했어요.
+          검토 대기 목록을 불러오지 못했어요.
         </p>
       </main>
     );
   }
 
-  // 최초 진입 시 첫 티켓 자동 선택
-  const effectiveSelectedId = selectedId ?? tickets[0]?.ticket_id ?? null;
-  const selected = tickets.find((t) => t.ticket_id === effectiveSelectedId);
-
   return (
     <main className="flex min-h-0 flex-1">
       <Inbox
-        tickets={tickets}
-        statusOf={statusOf}
+        inquiries={list}
         selectedId={effectiveSelectedId}
         onSelect={setSelectedId}
         priorityFilter={priorityFilter}
-        statusFilter={statusFilter}
         onPriorityFilter={setPriorityFilter}
-        onStatusFilter={setStatusFilter}
       />
 
       <section className="aian-scroll min-w-0 flex-1 overflow-y-auto bg-[#eef2f7]">
         {selected ? (
           <TicketDetail
-            ticket={selected}
-            status={statusOf(selected)}
-            draft={drafts[selected.ticket_id] ?? selected.answer_draft ?? ""}
-            priority={priorities[selected.ticket_id] ?? selected.rule.priority}
-            department={depts[selected.ticket_id] ?? selected.rule.department}
-            toast={toast}
+            inquiry={selected}
+            draft={drafts[selected.id] ?? selected.answer_draft}
             onDraftChange={(v) =>
-              setDrafts((prev) => ({ ...prev, [selected.ticket_id]: v }))
+              setDrafts((prev) => ({ ...prev, [selected.id]: v }))
             }
-            onPriorityChange={(p) =>
-              setPriorities((prev) => ({ ...prev, [selected.ticket_id]: p }))
+            onApproveAsIs={() => handleApprove(selected.id, null)}
+            onApproveEdited={() =>
+              handleApprove(selected.id, drafts[selected.id] ?? selected.answer_draft)
             }
-            onDepartmentChange={(d) =>
-              setDepts((prev) => ({ ...prev, [selected.ticket_id]: d }))
-            }
-            onSend={() => {
-              setStatuses((prev) => ({
-                ...prev,
-                [selected.ticket_id]: "발송완료",
-              }));
-              showToast("답변이 발송되었습니다");
-            }}
-            onReassign={() => {
-              setStatuses((prev) => ({
-                ...prev,
-                [selected.ticket_id]: "검토중",
-              }));
-              showToast("부서가 재배정되었습니다");
-            }}
-            onSaveDraft={() => showToast("임시 저장되었습니다")}
+            isSubmitting={review.isPending}
+            toast={toast}
           />
         ) : (
           <div className="flex h-full items-center justify-center">
             <p className="text-[14px] text-[#94a3b8]">
-              왼쪽에서 민원을 선택하세요.
+              검토할 민원이 없습니다.
             </p>
           </div>
         )}
