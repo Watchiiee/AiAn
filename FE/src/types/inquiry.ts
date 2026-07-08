@@ -1,10 +1,13 @@
-// 백엔드 응답 스펙 (v3 기준 — 문의 등록/조회 구조 변경 반영)
+// 백엔드 응답 스펙 (v4 기준 — 검토 화면 데이터 확장 + 권한 3단계)
 //
 // 흐름:
 //   사용자: POST /api/inquiry (등록)          -> 접수 확인만 받음 (답변 내용 모름)
 //   사용자: GET  /api/inquiry/my (내 문의함)   -> 로그인 기반 자동 필터링, 검토 끝난 건만 답변 보임
-//   담당자: GET  /api/inquiry/pending (검토 대기) -> AI 초안 + 확신도 확인
-//   담당자: PATCH /api/inquiry/{id}/review     -> 그대로 승인 또는 수정 후 승인
+//   담당자(staff+): GET /api/inquiry/pending   -> 분류·근거문서·AI 초안·확신도 전부 확인
+//   담당자(staff+): PATCH /api/inquiry/{id}/review -> 그대로 승인 또는 수정 후 승인
+//   최고관리자(master만): PATCH /api/inquiry/{id}/rule -> 부서/우선순위 재배정
+//
+// 권한: general < staff < master (계층형. master는 staff가 하는 것도 다 가능)
 
 export type InquiryType =
   | "경력인증"
@@ -23,6 +26,18 @@ export type RecordStatus = "pending" | "answered";
 
 /** 답변이 근거로 얼마나 뒷받침되는지 (담당자 검토용) */
 export type AnswerConfidence = "sufficient" | "partial" | "insufficient";
+
+/** "admin"(행정) 또는 "technical"(기술질의) */
+export type InquiryDomain = "admin" | "technical";
+
+/** RAG 검색으로 찾은 근거 문서 한 건 */
+export interface RetrievedDoc {
+  content: string;
+  /** "파일명 > 질문" 형태의 출처 */
+  source: string;
+  /** 유사도 점수. 0.4 이하면 "근거 약함" */
+  score: number;
+}
 
 /** POST /api/inquiry 의 요청 바디 */
 export interface InquiryRequest {
@@ -51,18 +66,27 @@ export interface MyInquiry {
 }
 
 /**
- * GET /api/inquiry/pending 의 응답 (담당자 전용).
- * AI 초안·확신도가 포함된다. RAG 근거문서나 분류 확신도는 이 API에 없다.
+ * GET /api/inquiry/pending 의 응답 (staff 이상 전용).
+ * v4에서 분류·근거문서·LLM 실패 여부가 전부 복원되었다.
  */
 export interface PendingInquiry {
   id: number;
   created_at: string;
   original_text: string;
   inquiry_type: InquiryType;
+  /** 핵심 요청 한 줄 요약 */
+  key_request: string;
+  /** 분류 확신도 0~1. 0.5 미만이면 "분류 불확실" 표시 */
+  confidence: number;
+  domain: InquiryDomain;
   department: string;
   priority: Priority;
   answer_draft: string;
   answer_confidence: AnswerConfidence;
+  retrieved: RetrievedDoc[];
+  used_llm: boolean;
+  /** null 이면 정상, 값이 있으면 LLM 생성 실패 */
+  llm_error: string | null;
 }
 
 /** PATCH /api/inquiry/{id}/review 의 요청 바디 */
@@ -73,3 +97,15 @@ export interface ReviewRequest {
 
 /** PATCH /api/inquiry/{id}/review 의 응답. GET /api/inquiry/my 항목과 같은 형식. */
 export type ReviewResponse = MyInquiry;
+
+/**
+ * PATCH /api/inquiry/{id}/rule 의 요청 바디 (master 전용).
+ * 둘 다 선택 필드 — 하나만 보내면 그것만 바뀐다.
+ */
+export interface RuleUpdateRequest {
+  priority?: Priority;
+  department?: string;
+}
+
+/** PATCH /api/inquiry/{id}/rule 의 응답. /my, /review 와 동일 형식. */
+export type RuleUpdateResponse = MyInquiry;

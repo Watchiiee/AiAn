@@ -1,7 +1,10 @@
-import type { PendingInquiry } from "../../types/inquiry";
-import { priorityBadgeClass, priorityDotClass, typeBadgeClass } from "../../utils/badges";
+import type { PendingInquiry, Priority } from "../../types/inquiry";
 import { formatDateTime } from "../../utils/format";
+import LlmErrorBanner from "./LlmErrorBanner";
+import ClassificationCard from "./ClassificationCard";
+import RuleCard from "./RuleCard";
 import DraftEditor from "./DraftEditor";
+import EvidenceList from "./EvidenceList";
 
 interface TicketDetailProps {
   inquiry: PendingInquiry;
@@ -11,6 +14,11 @@ interface TicketDetailProps {
   onApproveEdited: () => void;
   isSubmitting: boolean;
   toast: string | null;
+
+  /** master 전용 재배정 */
+  canReassign: boolean;
+  onSaveRule: (priority: Priority, department: string) => void;
+  isSavingRule: boolean;
 }
 
 export default function TicketDetail({
@@ -21,24 +29,22 @@ export default function TicketDetail({
   onApproveEdited,
   isSubmitting,
   toast,
+  canReassign,
+  onSaveRule,
+  isSavingRule,
 }: TicketDetailProps) {
   const edited = draft.trim() !== inquiry.answer_draft.trim();
 
   return (
     <div className="mx-auto max-w-[820px] px-[30px] pb-10 pt-[26px]">
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+      {inquiry.llm_error && <LlmErrorBanner error={inquiry.llm_error} />}
+
+      <div className="mb-1.5 flex items-center gap-2.5">
         <span className="font-mono text-[12.5px] font-semibold text-[#94a3b8]">
           #{inquiry.id}
         </span>
-        <span className={priorityBadgeClass(inquiry.priority)}>
-          <span className={priorityDotClass(inquiry.priority)} />
-          {inquiry.priority}
-        </span>
-        <span className={typeBadgeClass(inquiry.inquiry_type)}>
-          {inquiry.inquiry_type}
-        </span>
         <span className="text-[12px] font-semibold text-[#94a3b8]">
-          {inquiry.department} · {formatDateTime(inquiry.created_at)}
+          {formatDateTime(inquiry.created_at)}
         </span>
       </div>
 
@@ -51,12 +57,32 @@ export default function TicketDetail({
         </p>
       </div>
 
+      <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <ClassificationCard
+          inquiryType={inquiry.inquiry_type}
+          keyRequest={inquiry.key_request}
+          confidence={inquiry.confidence}
+          domain={inquiry.domain}
+        />
+        <RuleCard
+          priority={inquiry.priority}
+          department={inquiry.department}
+          editable={canReassign}
+          onSave={onSaveRule}
+          isSaving={isSavingRule}
+        />
+      </div>
+
       <div className="mb-4">
         <DraftEditor
           value={draft}
           answerConfidence={inquiry.answer_confidence}
           onChange={onDraftChange}
         />
+      </div>
+
+      <div className="mb-4">
+        <EvidenceList retrieved={inquiry.retrieved} />
       </div>
 
       <div className="sticky bottom-0 flex flex-wrap items-center gap-2.5 bg-gradient-to-t from-[#eef2f7] from-70% to-transparent pb-1 pt-3.5">

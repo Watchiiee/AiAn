@@ -31,7 +31,11 @@ export default function Header() {
               {session.email}
             </div>
             <div className="text-[11px] font-semibold text-[#94a3b8]">
-              {session.role === "staff" ? "담당자" : "일반 사용자"}
+              {session.role === "master"
+                ? "최고관리자"
+                : session.role === "staff"
+                  ? "담당자"
+                  : "일반 사용자"}
             </div>
           </div>
           <button

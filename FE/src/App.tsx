@@ -24,11 +24,11 @@ export default function App() {
           }
         />
 
-        {/* 담당자(관리자) 화면 */}
+        {/* 담당자(staff) + 최고관리자(master) 화면 */}
         <Route
           path="/admin"
           element={
-            <ProtectedRoute allow={["staff"]}>
+            <ProtectedRoute allow={["staff", "master"]}>
               <StaffPage />
             </ProtectedRoute>
           }

@@ -6,6 +6,8 @@ import type {
   PendingInquiry,
   ReviewRequest,
   ReviewResponse,
+  RuleUpdateRequest,
+  RuleUpdateResponse,
 } from "../types/inquiry";
 
 /**
@@ -43,4 +45,18 @@ export function reviewInquiry(
 ): Promise<ReviewResponse> {
   const body: ReviewRequest = { final_answer: finalAnswer };
   return apiPatch<ReviewRequest, ReviewResponse>(`/api/inquiry/${id}/review`, body);
+}
+
+/**
+ * 담당자 전용(master만) — 부서/우선순위 재배정.
+ * 하나만 보내면 그 필드만 바뀐다. staff 계정으로 호출하면 403.
+ */
+export function updateInquiryRule(
+  id: number,
+  patch: RuleUpdateRequest,
+): Promise<RuleUpdateResponse> {
+  return apiPatch<RuleUpdateRequest, RuleUpdateResponse>(
+    `/api/inquiry/${id}/rule`,
+    patch,
+  );
 }

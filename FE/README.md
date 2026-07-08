@@ -73,18 +73,19 @@ npm run dev          # http://localhost:5173
 ```
 src/
 ├─ main.tsx                  # 진입점 (QueryClient + AuthProvider + Router 주입)
-├─ App.tsx                   # 라우팅 (/login, /register, / = 일반, /admin = 담당자)
+├─ App.tsx                   # 라우팅 (/login, /register, / = 일반, /admin = staff+master)
 ├─ index.css                 # Tailwind + 커스텀 애니메이션 (Pretendard는 index.html)
 │
 ├─ types/
-│  ├─ inquiry.ts             # 백엔드 응답 타입 (v3: 등록/내문의함/검토대기/승인)
-│  └─ auth.ts                # 로그인/회원가입 타입
-├─ constants/options.ts      # 예시 칩·필터·정렬 우선순위
+│  ├─ inquiry.ts             # 백엔드 응답 타입 (v4: 검토 데이터 확장 + 재배정)
+│  └─ auth.ts                # 로그인/회원가입 타입 (Role: general/staff/master)
+├─ constants/options.ts      # 예시 칩·필터·재배정 옵션·임계값
 │
 ├─ api/
 │  ├─ client.ts              # fetch 래퍼: 토큰 자동 첨부 + 401 시 자동 로그아웃 이벤트
 │  ├─ auth.ts                # POST /api/auth/register, /api/auth/login
-│  └─ inquiry.ts             # POST /api/inquiry, GET /my, GET /my/{id}, GET /pending, PATCH /{id}/review
+│  └─ inquiry.ts             # POST /api/inquiry, GET /my, GET /my/{id}, GET /pending,
+│                             # PATCH /{id}/review, PATCH /{id}/rule (master 전용)
 │
 ├─ context/AuthContext.tsx   # 로그인 세션 상태 (localStorage 저장, 401 이벤트 구독)
 ├─ lib/
@@ -94,21 +95,22 @@ src/
 ├─ hooks/
 │  ├─ useSubmitInquiry.ts    # 문의 등록 (접수 확인만 옴)
 │  ├─ useMyInquiries.ts      # 내 문의 목록 (로그인 기반, 검색 없음)
-│  ├─ usePendingInquiries.ts # 담당자 검토 대기 목록
-│  └─ useReviewInquiry.ts    # 담당자 승인 (그대로/수정)
+│  ├─ usePendingInquiries.ts # 검토 대기 목록 (staff 이상)
+│  ├─ useReviewInquiry.ts    # 답변 승인 (그대로/수정, staff 이상)
+│  └─ useUpdateRule.ts       # 부서/우선순위 재배정 (master 전용)
 │
 ├─ utils/
-│  ├─ badges.ts              # 배지/색상 → Tailwind 클래스
-│  └─ format.ts              # 날짜 표시·우선순위 정렬
+│  ├─ badges.ts              # 배지/색상 → Tailwind 클래스 (근거 약함/확신도 포함)
+│  └─ format.ts              # 날짜 표시·확신도 계산·우선순위 정렬
 │
 ├─ pages/
 │  ├─ LoginPage.tsx          # 로그인
 │  ├─ RegisterPage.tsx       # 회원가입 (가입은 항상 general)
 │  ├─ CitizenPage.tsx        # 일반 사용자: 입력 → 접수완료 → 내 문의함
-│  └─ StaffPage.tsx          # 담당자: 검토 대기 목록 + 상세(승인)
+│  └─ StaffPage.tsx          # staff/master: 검토 대기 목록 + 상세(승인 + 재배정)
 │
 └─ components/
-   ├─ Header.tsx             # 로고 + 로그인한 사용자 정보 + 로그아웃
+   ├─ Header.tsx             # 로고 + 로그인한 사용자 정보(역할 라벨 3종) + 로그아웃
    ├─ ProtectedRoute.tsx     # 로그인 필요 + role 검사 라우트 가드
    ├─ common/Spinner.tsx
    ├─ citizen/
@@ -120,8 +122,12 @@ src/
       ├─ Inbox.tsx           # 검토 대기 목록 (우선순위 필터 + 정렬)
       ├─ FilterBar.tsx
       ├─ InboxItem.tsx
-      ├─ TicketDetail.tsx    # 원문 + 초안 + [그대로 승인]/[수정 후 승인]
-      └─ DraftEditor.tsx     # 편집 가능한 AI 초안 + answer_confidence 배지
+      ├─ TicketDetail.tsx    # 원문 + 분류 + 룰 + 초안 + 근거문서 + 승인 액션
+      ├─ ClassificationCard.tsx  # 유형·핵심요청·확신도바·분류불확실 경고·domain 태그
+      ├─ RuleCard.tsx            # 우선순위·부서 (master만 편집 가능, staff는 읽기전용)
+      ├─ DraftEditor.tsx         # 편집 가능한 AI 초안 + answer_confidence 배지
+      ├─ EvidenceList.tsx        # RAG 근거 문서 (유사도/근거약함)
+      └─ LlmErrorBanner.tsx      # LLM 실패 배너
 ```
 
 ---
@@ -129,50 +135,79 @@ src/
 ## 5. 인증 흐름
 
 - `/login`, `/register` 는 누구나 접근 가능.
-- `/`(일반 사용자), `/admin`(담당자)은 `ProtectedRoute` 로 보호됨.
+- `/`(일반 사용자)는 `general`만, `/admin`(담당자 화면)은 `staff`와 `master` 둘 다 접근 가능.
   - 로그인 안 했으면 `/login` 으로 리다이렉트.
   - 로그인은 했지만 role 이 안 맞으면(`general`이 `/admin` 접근 등) 자기 홈으로 리다이렉트.
 - 로그인 성공 시 `access_token` + `role` 을 `localStorage`(`aian_auth` 키)에 저장.
 - 이후 모든 인증 필요 요청에 `Authorization: Bearer <토큰>` 자동 첨부 (`api/client.ts`).
 - 토큰 만료/무효로 401 이 오면 `client.ts` 가 전역 이벤트(`aian:unauthorized`)를 쏘고,
   `AuthContext` 가 이를 구독해 자동 로그아웃 → 다음 렌더에서 `ProtectedRoute` 가 `/login` 으로 보냄.
-- 회원가입은 항상 `role: general` 로 생성됨(서버가 강제).
+- 회원가입은 항상 `role: general` 로 생성됨(서버가 강제). staff/master 계정은 백엔드 팀이 DB에서 직접 부여.
 
 ---
 
-## 6. 문의 처리 흐름 (v3)
-
-백엔드가 "등록"과 "결과 확인"을 분리했다. 반드시 이 순서로 이해할 것:
+## 6. 권한 3단계 (v4)
 
 ```
-일반 사용자          POST /api/inquiry           담당자
+general (일반 사용자)
+   ↓
+staff   (담당자)       — 검토 큐 조회, 답변 승인
+   ↓
+master  (최고관리자)   — + 부서/우선순위 재배정
+```
+
+계층형이라 `master`는 `staff`가 하는 것(검토 큐 조회, 답변 승인)도 다 할 수 있다.
+화면은 하나(`/admin` = `StaffPage`)를 공유하고, `useAuth().role === "master"` 여부로
+`RuleCard` 를 편집 가능하게 보여줄지, 읽기 전용으로 보여줄지만 갈린다.
+staff 계정으로 `PATCH /api/inquiry/{id}/rule` 을 직접 호출하면 서버가 403을 주므로,
+프론트에서도 아예 그 버튼을 안 보여줘서 헷갈릴 일이 없게 했다.
+
+| 엔드포인트 | 필요 권한 |
+|---|---|
+| `POST /api/inquiry` | 로그인만 하면 됨 |
+| `GET /api/inquiry/my`, `/my/{id}` | 로그인만 하면 됨 |
+| `GET /api/inquiry/pending` | staff 이상 |
+| `PATCH /api/inquiry/{id}/review` | staff 이상 |
+| `PATCH /api/inquiry/{id}/rule` | **master만** |
+
+---
+
+## 7. 문의 처리 흐름
+
+```
+일반 사용자          POST /api/inquiry           담당자(staff+)
   등록  ───────────────────────────────▶   (답변 없음, 접수 확인 id만)
                                                     │
                                           GET /api/inquiry/pending
-                                          (AI 초안 + answer_confidence 확인)
+                                          (분류·근거문서·AI 초안·확신도 전부 확인)
                                                     │
-                                          PATCH /api/inquiry/{id}/review
-                                          (그대로 승인 / 수정 후 승인)
-                                                    │
-  GET /api/inquiry/my ◀──────────────────────────┘
+                                    ┌───────────────┴────────────────┐
+                                    │                                 │
+                          PATCH .../review                  PATCH .../rule (master만)
+                          (그대로 승인 / 수정 후 승인)         (부서·우선순위 재배정)
+                                    │
+  GET /api/inquiry/my ◀────────────┘
   (status: answered 로 바뀌고 answer 가 채워짐)
 ```
 
 **일반 사용자 화면**
-- 문의 등록 직후에는 AI 결과를 전혀 보여주지 않는다 (`answer_draft` 자체가 응답에 없음).
-  `POST /api/inquiry` 응답은 `{ id, message, created_at }` 뿐이라, 접수 완료 화면엔 이 `id`만 표시.
-- "내 문의함"은 키워드 검색이 아니라 `GET /api/inquiry/my` 를 그대로 호출한다. 토큰만 있으면
-  로그인한 사람 것만 자동으로 온다. `status: "pending"` 이면 "답변 대기중" 표시하고 `answer` 는 항상 null,
-  `"answered"` 면 `answer` 내용을 펼쳐서 보여준다.
+- 문의 등록 직후에는 AI 결과를 전혀 보여주지 않는다. `POST /api/inquiry` 응답은
+  `{ id, message, created_at }` 뿐이라, 접수 완료 화면엔 이 `id`만 표시.
+- "내 문의함"은 키워드 검색이 아니라 `GET /api/inquiry/my` 를 그대로 호출한다.
+  `status: "pending"` 이면 "답변 대기중" 표시, `"answered"` 면 `answer` 를 펼쳐서 보여준다.
 
-**담당자 화면**
-- 목록은 `GET /api/inquiry/pending` 실제 API로 채운다 (더 이상 목업 아님).
-- 이 API 응답에는 RAG 근거 문서, LLM 실패 사유, 분류 확신도, `domain` 이 **없다** — v1/v2에 있던
-  근거문서 카드·LLM 실패 배너·확신도 바·분류 카드는 데이터가 없으므로 화면에서 제거했다.
-- 부서 재배정 API도 없어져서 "부서 재배정" 버튼도 제거했다. 지금 담당자가 할 수 있는 액션은
-  오직 승인뿐이다: **"초안 그대로 승인"**(`final_answer: null`) 또는 초안을 고친 뒤
-  **"수정한 내용으로 승인"**(`final_answer: 수정된 텍스트`).
+**담당자 화면(staff/master 공용)**
+- 목록은 `GET /api/inquiry/pending` 실제 API로 채운다.
+- v4부터 이 API 응답에 분류(`key_request`/`confidence`/`domain`), 근거 문서(`retrieved`),
+  LLM 실패 여부(`used_llm`/`llm_error`)가 전부 복원되어 v1 디자인대로 카드들을 다시 그렸다.
+- 승인 액션은 **"초안 그대로 승인"**(`final_answer: null`) 또는 초안을 고친 뒤
+  **"수정한 내용으로 승인"**(`final_answer: 수정된 텍스트`) 두 가지.
 - 승인하면 그 건은 `pending` 목록에서 즉시 빠진다(쿼리 무효화로 자동 새로고침).
 
-**주의**: 백엔드가 나중에 근거문서/재배정 API를 다시 추가하면, 그때 관련 카드를 되살리면 된다.
-지금은 실제로 오는 데이터만 화면에 반영했다.
+**최고관리자 전용**
+- `RuleCard` 가 편집 가능한 셀렉트 박스로 바뀌고, 값을 바꾸면 "재배정 저장" 버튼이 활성화된다.
+- 저장 시 `PATCH /api/inquiry/{id}/rule` 호출, 성공하면 목록을 새로고침해서 바뀐 값을 반영한다.
+
+**초안 임시 저장**
+- 서버에 저장하지 않는다(백엔드팀 결정). 담당자 화면의 편집 중인 초안은 `StaffPage` 의
+  로컬 state(`drafts`)에만 있으며, 새로고침하면 사라진다. 승인해야 서버에 반영된다.

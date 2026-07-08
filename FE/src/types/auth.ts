@@ -1,4 +1,9 @@
-export type Role = "general" | "staff";
+/**
+ * 권한 3단계 (계층형): general < staff < master
+ * master는 staff가 하는 것(검토 큐 조회, 답변 승인)도 다 할 수 있고,
+ * 추가로 부서/우선순위 재배정(PATCH /api/inquiry/{id}/rule)을 할 수 있다.
+ */
+export type Role = "general" | "staff" | "master";
 
 export interface RegisterRequest {
   email: string;

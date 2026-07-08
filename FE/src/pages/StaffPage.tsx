@@ -4,10 +4,17 @@ import TicketDetail from "../components/staff/TicketDetail";
 import Spinner from "../components/common/Spinner";
 import { usePendingInquiries } from "../hooks/usePendingInquiries";
 import { useReviewInquiry } from "../hooks/useReviewInquiry";
+import { useUpdateRule } from "../hooks/useUpdateRule";
+import { useAuth } from "../context/AuthContext";
+import type { Priority } from "../types/inquiry";
 
 export default function StaffPage() {
+  const { role } = useAuth();
+  const canReassign = role === "master";
+
   const { data: inquiries, isLoading, isError } = usePendingInquiries();
   const review = useReviewInquiry();
+  const updateRule = useUpdateRule();
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [priorityFilter, setPriorityFilter] = useState("전체");
@@ -25,7 +32,7 @@ export default function StaffPage() {
   const effectiveSelectedId = selectedId ?? list[0]?.id ?? null;
   const selected = list.find((t) => t.id === effectiveSelectedId) ?? null;
 
-  // 승인되면 목록에서 사라지므로, 선택된 항목이 없어지면 첫 항목으로 옮겨준다.
+  // 승인되면 목록에서 사라지므로, 선택된 항목이 없어지면 선택을 초기화한다.
   useEffect(() => {
     if (selectedId !== null && !list.some((t) => t.id === selectedId)) {
       setSelectedId(null);
@@ -44,6 +51,16 @@ export default function StaffPage() {
           );
         },
         onError: () => showToast("승인에 실패했어요. 다시 시도해 주세요."),
+      },
+    );
+  }
+
+  function handleSaveRule(id: number, priority: Priority, department: string) {
+    updateRule.mutate(
+      { id, priority, department },
+      {
+        onSuccess: () => showToast("부서/우선순위를 재배정했습니다"),
+        onError: () => showToast("재배정에 실패했어요. 다시 시도해 주세요."),
       },
     );
   }
@@ -89,6 +106,9 @@ export default function StaffPage() {
             }
             isSubmitting={review.isPending}
             toast={toast}
+            canReassign={canReassign}
+            onSaveRule={(p, d) => handleSaveRule(selected.id, p, d)}
+            isSavingRule={updateRule.isPending}
           />
         ) : (
           <div className="flex h-full items-center justify-center">
