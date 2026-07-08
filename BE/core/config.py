@@ -25,6 +25,17 @@ class Settings(BaseSettings):
     # LLM을 부르지 않고 바로 insufficient 처리한다. (실측: 관련 0.6~0.7 / 무관 0.3)
     no_evidence_threshold: float = 0.4
 
+    # --- 데이터베이스 (문의 이력 저장) ---
+    # 로컬 개발: postgresql+psycopg2://<사용자>@localhost:5432/aian
+    # 배포 시:   .env 의 이 값만 클라우드 DB(GCP Cloud SQL 등) 주소로 교체하면 됨
+    #           (코드는 그대로, 접속 주소만 바뀜)
+    database_url: str = "postgresql+psycopg2://localhost:5432/aian"
+
+    # JWT 인증
+    jwt_secret_key: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60
+
     @property
     def has_api_key(self) -> bool:
         return bool(self.clova_api_key.strip())

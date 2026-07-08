@@ -8,8 +8,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from BE.core.config import settings
 from BE.api.inquiry import router as inquiry_router
+from BE.db.database import init_db
 
 app = FastAPI(title="AiAn - 전기 회사 민원 분류·답변 시스템")
+
+
+@app.on_event("startup")
+def on_startup():
+    """서버 시작 시 필요한 테이블이 없으면 만든다."""
+    init_db()
 
 # React 개발 서버(5173/3000)에서 호출할 수 있게 CORS 허용
 app.add_middleware(

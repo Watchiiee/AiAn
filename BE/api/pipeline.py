@@ -16,7 +16,12 @@ from AI.rag.retriever import retrieve
 from AI.rag.generator import generate, fallback_answer
 
 
-def process_inquiry(text: str) -> InquiryResponse:
+def process_inquiry(text: str, db=None) -> InquiryResponse:
+    """
+    문의 하나를 처리한다.
+    db(Session)를 주면 처리 결과를 inquiries 테이블에 저장한다.
+    (db=None 이면 저장을 건너뛴다 — 테스트나 저장이 필요 없는 호출에 사용)
+    """
     cls = classify(text)                       # 1. 분류   (AI, 실패 시 내부 폴백)
     rule = apply_rules(text, cls)              # 2. 룰     (BE)
     docs = retrieve(text, cls)                 # 3. 검색   (AI)
@@ -31,7 +36,7 @@ def process_inquiry(text: str) -> InquiryResponse:
         answer = fallback_answer(text, cls, rule, docs, reason=llm_error)
         answer_confidence = AnswerConfidence.PARTIAL
 
-    return InquiryResponse(
+    response = InquiryResponse(
         original_text=text,
         classification=cls,
         rule=rule,
@@ -41,3 +46,9 @@ def process_inquiry(text: str) -> InquiryResponse:
         used_llm=settings.has_api_key and llm_error is None,
         llm_error=llm_error,
     )
+
+    if db is not None:
+        from BE.db.crud import save_inquiry
+        save_inquiry(db, response)  # 실패해도 조용히 넘어감 (crud.py 참고)
+
+    return response

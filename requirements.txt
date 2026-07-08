@@ -10,3 +10,7 @@ requests==2.32.3
 
 chromadb==1.5.9
 sentence-transformers
+
+# --- DB: 문의 이력 저장 (PostgreSQL) ---
+sqlalchemy
+psycopg2-binary
