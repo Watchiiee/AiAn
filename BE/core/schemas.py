@@ -78,12 +78,14 @@ class InquiryResponse(BaseModel):
 class UserRoleSchema(str, Enum):
     GENERAL = "general"
     STAFF = "staff"
+    MASTER = "master"
 
 
 class RegisterRequest(BaseModel):
+    """일반 회원가입 요청. role은 받지 않는다 — 가입은 항상 general이며,
+    staff/master 권한은 운영자가 DB에서 직접 부여한다."""
     email: str
     password: str = Field(..., min_length=8, description="8자 이상")
-    role: UserRoleSchema = UserRoleSchema.GENERAL
 
 
 class LoginRequest(BaseModel):
@@ -136,12 +138,26 @@ class ReviewRequest(BaseModel):
 
 
 class PendingInquiryResponse(BaseModel):
-    """GET /api/inquiry/pending (담당자용 검토 대기 큐) 응답 항목."""
+    """GET /api/inquiry/pending (담당자용 검토 대기 큐) 응답 항목.
+    담당자가 검토 판단을 하려면 분류·근거·AI 처리상태까지 다 봐야 하므로
+    v1 InquiryResponse 수준의 정보를 그대로 포함한다."""
     id: int
     created_at: str
     original_text: str
     inquiry_type: str
+    key_request: str | None = None
+    confidence: float
+    domain: str
     department: str
     priority: str
     answer_draft: str
     answer_confidence: AnswerConfidence
+    retrieved: list[RetrievedDoc] = []
+    used_llm: bool
+    llm_error: str | None = None
+
+
+class RuleUpdateRequest(BaseModel):
+    """담당자의 AI 분류가 틀렸을 때 최고관리자가 부서/우선순위를 재배정."""
+    priority: str | None = None
+    department: str | None = None

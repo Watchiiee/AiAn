@@ -25,6 +25,7 @@ class InquiryRecord(Base):
     # 원문·분류 결과
     original_text = Column(String, nullable=False)
     inquiry_type = Column(String, nullable=False)       # 예: 경력인증, 신청 ...
+    key_request = Column(String, nullable=True)          # 핵심 요청 한 줄 요약
     domain = Column(String, nullable=False)             # admin / technical
     confidence = Column(Float, nullable=False)
 
@@ -50,7 +51,8 @@ class InquiryRecord(Base):
 
 class UserRole(str, enum.Enum):
     GENERAL = "general"      # 일반 사용자
-    STAFF = "staff"          # 담당자
+    STAFF = "staff"          # 담당자 (검토·승인)
+    MASTER = "master"        # 최고관리자 (담당자 권한 + 부서/우선순위 재배정 등)
 
 
 class User(Base):

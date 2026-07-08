@@ -24,6 +24,7 @@ def save_inquiry(db: Session, response: InquiryResponse, user_id: int) -> Inquir
         user_id=user_id,
         original_text=response.original_text,
         inquiry_type=response.classification.type.value,
+        key_request=response.classification.key_request,
         domain=response.classification.domain.value,
         confidence=response.classification.confidence,
         department=response.rule.department,
@@ -81,6 +82,22 @@ def mark_reviewed(
     record.reviewed_at = datetime.now(timezone.utc)
     if final_answer:
         record.final_answer = final_answer
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+def update_rule(
+    db: Session, inquiry_id: int, priority: str | None = None, department: str | None = None
+) -> InquiryRecord | None:
+    """AI 분류(룰) 결과가 틀렸을 때 최고관리자가 부서/우선순위를 재배정한다."""
+    record = db.query(InquiryRecord).filter(InquiryRecord.id == inquiry_id).first()
+    if record is None:
+        return None
+    if priority is not None:
+        record.priority = priority
+    if department is not None:
+        record.department = department
     db.commit()
     db.refresh(record)
     return record

@@ -18,13 +18,13 @@ from sqlalchemy.orm import Session
 
 from BE.core.schemas import (
     InquiryRequest, InquirySubmitResponse, InquiryStatusResponse, InquiryStatus,
-    ReviewRequest, PendingInquiryResponse,
+    ReviewRequest, PendingInquiryResponse, RuleUpdateRequest,
 )
 from BE.api.pipeline import process_inquiry
 from BE.db.database import get_db
 from BE.db.models import InquiryRecord
 from BE.db import crud
-from BE.core.deps import get_current_user, require_staff
+from BE.core.deps import get_current_user, require_staff, require_master
 
 router = APIRouter(prefix="/api", tags=["inquiry"])
 
@@ -95,7 +95,7 @@ def get_my_inquiry(
 
 @router.get("/inquiry/pending", response_model=list[PendingInquiryResponse])
 def list_pending_inquiries(db: Session = Depends(get_db), user: dict = Depends(require_staff)):
-    """담당자 검토 대기 큐. 담당자만 접근 가능하며 AI 답변 초안을 볼 수 있다."""
+    """검토 대기 큐 (담당자 이상). 검토 판단에 필요한 분류·근거·AI상태를 모두 포함한다."""
     records = crud.get_pending_inquiries(db)
     return [
         PendingInquiryResponse(
@@ -103,13 +103,33 @@ def list_pending_inquiries(db: Session = Depends(get_db), user: dict = Depends(r
             created_at=r.created_at.isoformat(),
             original_text=r.original_text,
             inquiry_type=r.inquiry_type,
+            key_request=r.key_request,
+            confidence=r.confidence,
+            domain=r.domain,
             department=r.department,
             priority=r.priority,
             answer_draft=r.answer_draft,
             answer_confidence=r.answer_confidence,
+            retrieved=r.retrieved_docs or [],
+            used_llm=r.used_llm,
+            llm_error=r.llm_error,
         )
         for r in records
     ]
+
+
+@router.patch("/inquiry/{inquiry_id}/rule", response_model=InquiryStatusResponse)
+def update_inquiry_rule(
+    inquiry_id: int,
+    req: RuleUpdateRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_master),
+):
+    """AI가 잘못 배정한 부서/우선순위를 최고관리자가 재배정한다."""
+    record = crud.update_rule(db, inquiry_id, priority=req.priority, department=req.department)
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="문의를 찾을 수 없습니다.")
+    return _to_status_response(record)
 
 
 @router.patch("/inquiry/{inquiry_id}/review", response_model=InquiryStatusResponse)
