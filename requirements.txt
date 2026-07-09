@@ -20,3 +20,8 @@ psycopg2-binary
 bcrypt
 python-jose[cryptography]
 python-multipart
+
+# --- LangGraph (파이프라인 오케스트레이션) ---
+langgraph
+langchain-core
+EOF
