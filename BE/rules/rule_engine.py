@@ -1,10 +1,13 @@
 """
 2단계: 룰 적용.
 분류된 업무영역(category)을 실제 협회 조직도의 부서로 매핑한다.
-(기존에는 type(행위) 기준으로 매핑해 대부분 '민원안내팀'으로 쏠렸음.
- 조직도 확인 후 category(업무영역) 기준으로 바꿔 부서와 1:1 매칭되게 함.)
 
-우선순위는 여전히 type + 본문의 긴급 키워드로 판단 (부서와는 별개 축).
+우선순위:
+  - type(행위) 기준 기본값만 여기서 정한다 (오류/장애·취소환불은 '높음' 등).
+  - "긴급" 최종 판정은 여기서 안 한다 — 키워드 매칭은 "긴급! 사랑해요" 같은
+    거짓 양성(false positive) 위험이 있어 제거했다. 대신 파이프라인의
+    check_urgency 노드가 문맥 기반 LLM 판단 + 근거(urgent_reason)로 확정하고,
+    그 근거가 있을 때만 priority를 '긴급'으로 덮어쓴다 (BE/api/pipeline.py 참고).
 """
 from BE.core.schemas import Classification, RuleResult, InquiryType, BusinessCategory
 
@@ -18,27 +21,20 @@ _DEPT_MAP: dict[BusinessCategory, str] = {
     BusinessCategory.CONSORTIUM: "교육원(인적자원개발팀)",
     BusinessCategory.WEBSITE_IT: "정보전략실",
     BusinessCategory.TECHNICAL_SUPPORT: "연구원",
-    # OTHER 는 아래 apply_rules 에서 별도 처리 (경영지원팀 + 불확실 플래그)
 }
 _FALLBACK_DEPARTMENT = "경영지원팀"
 _FALLBACK_NOTE = "업무영역을 명확히 판단하지 못해 경영지원팀으로 임시 배정되었습니다. 내용을 확인해 알맞은 부서로 재배정해 주세요."
 
-# 유형(type) → 기본 우선순위 (부서와는 무관한 축)
+# 유형(type) → 기본 우선순위 (부서와는 무관한 축, '긴급'은 여기서 안 매김)
 _PRIORITY_MAP: dict[InquiryType, str] = {
-    InquiryType.URGENT: "긴급",
     InquiryType.CANCEL_REFUND: "높음",
     InquiryType.ERROR: "높음",
 }
 _DEFAULT_PRIORITY = "보통"
 
-# 본문에 이게 있으면 유형과 무관하게 우선순위를 끌어올린다
-_URGENT_KEYWORDS = ["마감", "당장", "즉시", "급합니다", "오늘까지", "불만", "항의", "피해"]
-
 
 def apply_rules(text: str, cls: Classification) -> RuleResult:
     priority = _PRIORITY_MAP.get(cls.type, _DEFAULT_PRIORITY)
-    if any(k in text for k in _URGENT_KEYWORDS) and priority != "긴급":
-        priority = "긴급"
 
     if cls.category == BusinessCategory.OTHER:
         return RuleResult(

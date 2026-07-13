@@ -8,7 +8,6 @@ from pydantic import BaseModel, Field
 
 
 class InquiryType(str, Enum):
-    """계획서 6번 문의 유형. 경력인증은 여러 유형 중 하나일 뿐임을 기억."""
     CAREER_CERT = "경력인증"
     APPLY = "신청"
     CHANGE = "변경"
@@ -16,22 +15,19 @@ class InquiryType(str, Enum):
     ERROR = "오류/장애"
     GENERAL = "일반문의"
     URGENT = "긴급문의"
-    UNKNOWN = "미분류"  # 분류 실패 시 안전망
+    UNKNOWN = "미분류"
 
 
-# --- 입력 ---
 class InquiryRequest(BaseModel):
-    text: str = Field(..., description="민원 문의 본문 (텍스트)")
+    text: str
 
 
-# --- 도메인 (검색 라우팅 키) ---
 class Domain(str, Enum):
     """질의 도메인. 검색할 지식베이스 컬렉션을 결정하는 라우팅 키."""
     ADMIN = "admin"          # 행정·절차 (신고·발급·수수료·자격 등)
     TECHNICAL = "technical"  # 기술 질의 (발전기·변압기·설비 등)
 
 
-# --- 업무영역 (부서 매핑 키, 조직도 기준 1:1 매칭) ---
 class BusinessCategory(str, Enum):
     """실제 협회 조직도의 부서와 1:1 대응하는 업무영역. 부서 배정의 근거가 된다."""
     SAFETY_MANAGER = "전기안전관리자"        # → 안전관리지원팀
@@ -42,7 +38,7 @@ class BusinessCategory(str, Enum):
     CONSORTIUM = "컨소시엄훈련"               # → 교육원(인적자원개발팀)
     WEBSITE_IT = "홈페이지·전산"              # → 정보전략실
     TECHNICAL_SUPPORT = "기술지원"            # → 연구원 (technical 도메인 기본 배정)
-    OTHER = "기타"                           # → 경영지원팀 (애매할 때의 안전한 기본값, department_certain=False)
+    OTHER = "기타"                           # → 경영지원팀 (애매할 때의 안전한 기본값)
 
 
 # --- 1단계: 분류 결과 ---
@@ -64,6 +60,9 @@ class RuleResult(BaseModel):
     )
     department_note: str | None = Field(
         None, description="department_certain=False일 때 담당자에게 보일 안내 문구"
+    )
+    urgent_reason: str | None = Field(
+        None, description="긴급으로 판정된 경우, 그 근거 (담당자가 AI 판단을 검증할 수 있게 노출)"
     )
 
 
@@ -174,6 +173,7 @@ class PendingInquiryResponse(BaseModel):
     department: str
     department_certain: bool = True
     department_note: str | None = None
+    urgent_reason: str | None = None
     priority: str
     answer_draft: str
     answer_confidence: AnswerConfidence

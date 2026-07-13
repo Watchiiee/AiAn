@@ -1,45 +1,46 @@
 """
 핵심 파이프라인 — LangGraph 심화(Adaptive RAG) 버전.
 
-이전 단계 백업:
-  pipeline_legacy.py       순수 Python 버전 (LangGraph 도입 전)
-  pipeline_basic_graph.py  LangGraph 기본형 (분기 없는 라우터, grader 없음)
 외부 인터페이스(process_inquiry(text) -> InquiryResponse)는 계속 동일하게
 유지해 inquiry.py/DB/인증 등 호출부는 전혀 바뀌지 않는다.
 
 그래프 구조:
 
-    START → classify → rule ─┬─(urgent 키워드)──────────────→ urgent_escalate ──→ END
-                              ├─(is_relevant=False, 잡담)────→ chitchat_decline ─→ END
-                              └─(일반 업무 문의, RAG 경로)
-                                       │
-                                       ▼
-                                   retrieve
-                                       │
-                                       ▼
-                                  doc_grade ──(관련없음, rewrite<2)──→ rewrite_query ─┐
-                                       │                                              │
-                                       │                                   (retrieve로 루프)
-                              (관련있음)│
-                                       │        (관련없음, rewrite 소진)
-                                       │              └──────────────────→ no_evidence → END
-                                       ▼
-                                   generate
-                                       │
-                                       ▼
-                              hallucination_grade ──(실패, regen<2)──→ bump_regenerate ─┐
-                                       │                                                 │
-                              (근거일치)│                                      (generate로 루프)
-                                       ▼
-                                 answer_grade ──(부적합, regen<2)──→ bump_regenerate (위와 공유)
-                                       │
-                              (적합)   ▼
-                                   finalize ──→ END
-                              (재시도 소진 시 finalize에서 확신도 하향 조정)
+    START → classify → rule → check_urgency ─┬─(is_urgent, 근거있음)──────→ urgent_escalate ──→ END
+                                                ├─(is_relevant=False, 잡담)──→ chitchat_decline ─→ END
+                                                └─(일반 업무 문의, RAG 경로)
+                                                         │
+                                                         ▼
+                                                     retrieve
+                                                         │
+                                                         ▼
+                                                    doc_grade ──(관련없음, rewrite<2)──→ rewrite_query ─┐
+                                                         │                                              │
+                                                         │                                   (retrieve로 루프)
+                                                (관련있음)│
+                                                         │        (관련없음, rewrite 소진)
+                                                         │              └──────────────────→ no_evidence → END
+                                                         ▼
+                                                     generate
+                                                         │
+                                                         ▼
+                                                hallucination_grade ──(실패, regen<2)──→ bump_regenerate ─┐
+                                                         │                                                 │
+                                                (근거일치)│                                      (generate로 루프)
+                                                         ▼
+                                                   answer_grade ──(부적합, regen<2)──→ bump_regenerate (위와 공유)
+                                                         │
+                                                (적합)   ▼
+                                                     finalize ──→ END
+                                                (재시도 소진 시 finalize에서 확신도 하향 조정)
 
-- 재검색(rewrite) 최대 2회, 재생성(hallucination/answer 실패 → generate) 최대 2회(두 grader가 카운터 공유).
-- urgent/chitchat 경로는 RAG·LLM 답변생성을 건너뛰어 비용을 아끼고,
-  민감한 민원에 AI가 즉석 답변을 지어내는 위험도 피한다.
+- check_urgency는 독립된 LLM 호출로 "긴급 여부"만 판단한다 (분류 프롬프트에
+  섞지 않음 — 여러 판단을 한 프롬프트에 몰아넣으면 필드가 혼동됐던 전례가 있어
+  판단 하나당 호출 하나 원칙을 지킨다). 키워드 매칭은 쓰지 않는다("긴급! 사랑해요"
+  같은 문장에 단어만 있고 실제로는 무관한 경우를 잡아내지 못하는 거짓양성 위험이
+  있어서다). is_urgent=True이면서 구체적 근거(urgent_reason)가 있을 때만 인정한다.
+- 재검색(rewrite) 최대 2회, 재생성(hallucination/answer 실패 → generate) 최대 2회
+  (두 grader가 카운터 공유).
 """
 from typing import TypedDict, Optional
 
@@ -50,26 +51,28 @@ from BE.core.config import settings
 from BE.core.schemas import (
     InquiryResponse, AnswerConfidence, Classification, RuleResult, RetrievedDoc,
 )
-from BE.rules.rule_engine import apply_rules, _URGENT_KEYWORDS
+from BE.rules.rule_engine import apply_rules
 from AI.classifier.classifier import classify
 from AI.rag.retriever import retrieve
 from AI.rag.generator import generate, fallback_answer, _top_score
-from AI.rag.grading import grade_documents, grade_hallucination, grade_answer, rewrite_query
+from AI.rag.grading import grade_documents, grade_hallucination, grade_answer, rewrite_query, check_urgency
 
 _MAX_REWRITE = 2
 _MAX_REGENERATE = 2
 
 
 class PipelineState(TypedDict):
-    text: str                                   # 원문 (검색에는 search_query 사용)
-    search_query: str                           # 재검색 시 바뀌는 검색어 (초기값 = text)
+    text: str
+    search_query: str
     cls: Optional[Classification]
     rule: Optional[RuleResult]
     docs: Optional[list[RetrievedDoc]]
     answer: Optional[str]
     answer_confidence: Optional[AnswerConfidence]
     llm_error: Optional[str]
-    route: str                                  # 추적용: urgent/chitchat/rag
+    route: str
+    is_urgent: bool
+    urgent_reason: Optional[str]
     doc_relevant: bool
     rewrite_count: int
     hallucination_ok: bool
@@ -77,7 +80,7 @@ class PipelineState(TypedDict):
     regenerate_count: int
 
 
-# --- 분류·룰 ---
+# --- 분류·룰·긴급판정 ---
 
 def node_classify(state: PipelineState) -> dict:
     cls = classify(state["text"])
@@ -88,9 +91,21 @@ def node_rule(state: PipelineState) -> dict:
     return {"rule": apply_rules(state["text"], state["cls"])}
 
 
-def _route_after_rule(state: PipelineState) -> str:
+def node_check_urgency(state: PipelineState) -> dict:
+    """
+    독립된 LLM 호출로 긴급 여부만 판단. 키워드 매칭 없음 — 문맥 기반 판단 +
+    구체적 근거(urgent_reason)가 있을 때만 인정한다 (근거 없는 판단은 신뢰 안 함).
+    """
+    is_urgent, reason = check_urgency(state["text"])
+    if is_urgent:
+        rule = state["rule"].model_copy(update={"priority": "긴급", "urgent_reason": reason})
+        return {"is_urgent": True, "urgent_reason": reason, "rule": rule}
+    return {"is_urgent": False, "urgent_reason": None}
+
+
+def _route_after_urgency(state: PipelineState) -> str:
     """1단계 라우터: 긴급/잡담/일반업무 3분기."""
-    if any(k in state["text"] for k in _URGENT_KEYWORDS):
+    if state["is_urgent"]:
         return "urgent"
     if not state["cls"].is_relevant:
         return "chitchat"
@@ -140,7 +155,6 @@ def node_retrieve(state: PipelineState) -> dict:
 
 def node_doc_grade(state: PipelineState) -> dict:
     docs = state["docs"]
-    # score 가 명백히 바닥이면 LLM 채점도 아끼고 바로 관련없음 처리
     if _top_score(docs) < settings.no_evidence_threshold:
         return {"doc_relevant": False}
     return {"doc_relevant": grade_documents(state["text"], docs)}
@@ -179,7 +193,7 @@ def node_generate(state: PipelineState) -> dict:
 
 
 def node_hallucination_grade(state: PipelineState) -> dict:
-    if state["llm_error"]:  # 이미 폴백 답변이면 채점 불필요
+    if state["llm_error"]:
         return {"hallucination_ok": True}
     return {"hallucination_ok": grade_hallucination(state["answer"], state["docs"])}
 
@@ -189,7 +203,7 @@ def _route_after_hallucination(state: PipelineState) -> str:
         return "answer_grade"
     if state["regenerate_count"] < _MAX_REGENERATE:
         return "bump_regenerate"
-    return "answer_grade"  # 재시도 소진 → 일단 통과, finalize 에서 확신도 하향
+    return "answer_grade"
 
 
 def node_answer_grade(state: PipelineState) -> dict:
@@ -203,7 +217,7 @@ def _route_after_answer_grade(state: PipelineState) -> str:
         return "finalize"
     if state["regenerate_count"] < _MAX_REGENERATE:
         return "bump_regenerate"
-    return "finalize"  # 재시도 소진 → finalize 에서 확신도 하향
+    return "finalize"
 
 
 def node_bump_regenerate(state: PipelineState) -> dict:
@@ -211,7 +225,6 @@ def node_bump_regenerate(state: PipelineState) -> dict:
 
 
 def node_finalize(state: PipelineState) -> dict:
-    """검증을 통과하지 못한 채 재시도가 소진된 답변은 확신도를 낮춰 담당자 확인을 유도."""
     if not state.get("hallucination_ok", True) or not state.get("answer_ok", True):
         if state["answer_confidence"] == AnswerConfidence.SUFFICIENT:
             return {"answer_confidence": AnswerConfidence.PARTIAL}
@@ -224,6 +237,7 @@ def _build_graph():
     g = StateGraph(PipelineState)
     g.add_node("classify", node_classify)
     g.add_node("rule", node_rule)
+    g.add_node("check_urgency", node_check_urgency)
     g.add_node("urgent_escalate", node_urgent_escalate)
     g.add_node("chitchat_decline", node_chitchat_decline)
     g.add_node("retrieve", node_retrieve)
@@ -238,7 +252,8 @@ def _build_graph():
 
     g.add_edge(START, "classify")
     g.add_edge("classify", "rule")
-    g.add_conditional_edges("rule", _route_after_rule, {
+    g.add_edge("rule", "check_urgency")
+    g.add_conditional_edges("check_urgency", _route_after_urgency, {
         "urgent": "urgent_escalate", "chitchat": "chitchat_decline", "rag": "retrieve",
     })
     g.add_edge("urgent_escalate", END)
@@ -272,6 +287,7 @@ def process_inquiry(text: str) -> InquiryResponse:
     init: PipelineState = {
         "text": text, "search_query": text, "cls": None, "rule": None, "docs": None,
         "answer": None, "answer_confidence": None, "llm_error": None, "route": "",
+        "is_urgent": False, "urgent_reason": None,
         "doc_relevant": False, "rewrite_count": 0, "hallucination_ok": True,
         "answer_ok": True, "regenerate_count": 0,
     }
