@@ -31,18 +31,39 @@ class Domain(str, Enum):
     TECHNICAL = "technical"  # 기술 질의 (발전기·변압기·설비 등)
 
 
+# --- 업무영역 (부서 매핑 키, 조직도 기준 1:1 매칭) ---
+class BusinessCategory(str, Enum):
+    """실제 협회 조직도의 부서와 1:1 대응하는 업무영역. 부서 배정의 근거가 된다."""
+    SAFETY_MANAGER = "전기안전관리자"        # → 안전관리지원팀
+    DESIGN_SUPERVISION = "설계감리"          # → 설계감리지원팀 (감리원배치·설계감리업·실적신고)
+    CAREER_MEMBERSHIP = "경력회원"           # → 회원관리팀 (경력신청·회원관리·회비)
+    MUTUAL_AID = "공제사업"                  # → 공제운영팀
+    EDUCATION = "교육"                       # → 교육원(교육운영팀)
+    CONSORTIUM = "컨소시엄훈련"               # → 교육원(인적자원개발팀)
+    WEBSITE_IT = "홈페이지·전산"              # → 정보전략실
+    TECHNICAL_SUPPORT = "기술지원"            # → 연구원 (technical 도메인 기본 배정)
+    OTHER = "기타"                           # → 경영지원팀 (애매할 때의 안전한 기본값, department_certain=False)
+
+
 # --- 1단계: 분류 결과 ---
 class Classification(BaseModel):
     type: InquiryType
     key_request: str = Field(..., description="문의의 핵심 요청 한 줄 요약")
     confidence: float = Field(0.0, ge=0.0, le=1.0)
     domain: Domain = Field(Domain.ADMIN, description="질의 도메인 (검색 라우팅용)")
+    category: BusinessCategory = Field(BusinessCategory.OTHER, description="업무영역 (부서 배정용, 조직도 기준)")
 
 
 # --- 2단계: 룰 적용 결과 ---
 class RuleResult(BaseModel):
     priority: str = Field(..., description="긴급/높음/보통")
     department: str = Field(..., description="담당 부서")
+    department_certain: bool = Field(
+        True, description="False면 업무영역이 애매해 경영지원팀으로 임시 배정된 것 (담당자 재배정 필요)"
+    )
+    department_note: str | None = Field(
+        None, description="department_certain=False일 때 담당자에게 보일 안내 문구"
+    )
 
 
 class AnswerConfidence(str, Enum):
@@ -148,7 +169,10 @@ class PendingInquiryResponse(BaseModel):
     key_request: str | None = None
     confidence: float
     domain: str
+    category: str | None = None
     department: str
+    department_certain: bool = True
+    department_note: str | None = None
     priority: str
     answer_draft: str
     answer_confidence: AnswerConfidence

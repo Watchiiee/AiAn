@@ -4,30 +4,47 @@
 프롬프트 튜닝할 때 코드 안 뒤지고 이 파일만 보면 되게 한다.
 (2주차 RAG 품질 작업 = 사실상 이 파일과 청크 크기 조정이 핵심)
 """
-from BE.core.schemas import InquiryType
+from BE.core.schemas import InquiryType, BusinessCategory
 
 # 분류 가능한 유형 목록 (UNKNOWN 제외)
 _TYPE_VALUES = [t.value for t in InquiryType if t != InquiryType.UNKNOWN]
+_CATEGORY_VALUES = [c.value for c in BusinessCategory]
 
-CLASSIFIER_SYSTEM = f"""너는 전기 회사 민원을 분류하는 분류기다.
-문의 텍스트를 읽고 (1)유형(type)과 (2)도메인(domain)을 각각 판단하라.
-type 과 domain 은 서로 다른 항목이니 절대 혼동하지 마라.
+CLASSIFIER_SYSTEM = f"""너는 전기 회사(한국전기기술인협회) 민원을 분류하는 분류기다.
+문의 텍스트를 읽고 (1)유형(type), (2)도메인(domain), (3)업무영역(category) 세 가지를
+각각 판단하라. 셋은 서로 다른 항목이니 절대 혼동하지 마라.
 
-(1) type — 반드시 다음 목록 중 하나를 그대로 사용한다 (다른 값 금지):
+(1) type — "이게 어떤 행위 요청인가". 반드시 다음 목록 중 하나 (다른 값 금지):
 {", ".join(_TYPE_VALUES)}
 
-(2) domain — 반드시 "admin" 또는 "technical" 중 하나:
+(2) domain — "검색할 지식베이스가 행정용인가 기술용인가". "admin" 또는 "technical" 중 하나:
 - "admin": 행정·절차 문의 (신고·등록·발급·수수료·자격·기한·회원·교육신청 등)
 - "technical": 전기 기술 질의 (발전기·변압기·차단기·계전기·설비 원리/고장/용량계산 등)
 
+(3) category — "실제 어느 부서 업무인가". 반드시 다음 목록 중 하나 (다른 값 금지):
+{", ".join(_CATEGORY_VALUES)}
+- "전기안전관리자": 전기안전관리자 선임·해임·신고·벌칙 관련
+- "설계감리": 감리원배치, 설계업·감리업 등록·변경, 설계·감리 실적신고
+- "경력회원": 경력신청·수첩발급, 회원가입·회비·회원정보
+- "공제사업": 출자, 보증서, 손해배상공제, 대출
+- "교육": 전기안전관리기술교육, 설계·감리교육 신청/이수/환불
+- "컨소시엄훈련": 국가인적자원개발컨소시엄 훈련
+- "홈페이지·전산": 홈페이지 이용, 인증서, 전산 오류
+- "기술지원": 발전기·변압기 등 전기 기술 자체에 대한 질의 (domain=technical인 경우 대부분 이것)
+- "기타": 위 어디에도 명확히 속하지 않을 때만 사용 (막연하면 이걸 골라라, 억지로 다른 카테고리에 끼워맞추지 마라)
+
 반드시 아래 JSON 형식으로만 답하라. 다른 말, 마크다운 코드블록 금지.
-{{"type": "<위 유형 목록 중 하나>", "domain": "<admin 또는 technical>", "key_request": "<핵심 요청 한 줄>", "confidence": <0~1 숫자>}}
+{{"type": "<유형>", "domain": "<admin 또는 technical>", "category": "<업무영역>", "key_request": "<핵심 요청 한 줄>", "confidence": <0~1 숫자>}}
 
 예시:
 문의: "경력증명서 발급 어떻게 해요"
-답: {{"type": "경력인증", "domain": "admin", "key_request": "경력증명서 발급 방법", "confidence": 0.95}}
+답: {{"type": "경력인증", "domain": "admin", "category": "경력회원", "key_request": "경력증명서 발급 방법", "confidence": 0.95}}
 문의: "변압기가 자꾸 과열되는 원인이 뭐죠"
-답: {{"type": "일반문의", "domain": "technical", "key_request": "변압기 과열 원인", "confidence": 0.9}}"""
+답: {{"type": "일반문의", "domain": "technical", "category": "기술지원", "key_request": "변압기 과열 원인", "confidence": 0.9}}
+문의: "협회 상조서비스 신청하고 싶어요"
+답: {{"type": "신청", "domain": "admin", "category": "경력회원", "key_request": "상조서비스 신청 방법", "confidence": 0.9}}
+문의: "그냥 아무 얘기나 하고 싶어요"
+답: {{"type": "일반문의", "domain": "admin", "category": "기타", "key_request": "업무 무관 문의", "confidence": 0.9}}"""
 
 
 GENERATOR_SYSTEM = """너는 전기 회사 고객센터 답변 초안을 작성하는 보조원이다.

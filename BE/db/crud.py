@@ -29,6 +29,8 @@ def save_inquiry(db: Session, response: InquiryResponse, user_id: int) -> Inquir
         confidence=response.classification.confidence,
         department=response.rule.department,
         priority=response.rule.priority,
+        category=response.classification.category.value,
+        department_certain=response.rule.department_certain,
         answer_draft=response.answer_draft,
         answer_confidence=response.answer_confidence.value,
         retrieved_docs=[d.model_dump() for d in response.retrieved],
@@ -98,6 +100,7 @@ def update_rule(
         record.priority = priority
     if department is not None:
         record.department = department
+        record.department_certain = True  # 사람이 직접 확정했으므로 더는 불확실 아님
     db.commit()
     db.refresh(record)
     return record
