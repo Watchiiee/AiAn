@@ -109,8 +109,7 @@ def list_pending_inquiries(db: Session = Depends(get_db), user: dict = Depends(r
             category=r.category,
             department=r.department,
             department_certain=r.department_certain,
-            department_note=(None if r.department_certain else
-                              "업무영역을 명확히 판단하지 못해 경영지원팀으로 임시 배정되었습니다. 알맞은 부서로 재배정해 주세요."),
+            department_note=r.department_note,
             priority=r.priority,
             answer_draft=r.answer_draft,
             answer_confidence=r.answer_confidence,

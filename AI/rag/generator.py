@@ -77,10 +77,20 @@ def generate(text: str, cls: Classification, rule: RuleResult,
     return _parse(raw, rule)
 
 
+def _strip_code_fence(raw: str) -> str:
+    """CLOVA가 ```json ... ``` 으로 감싸서 줄 때가 있어 벗겨낸다."""
+    text = raw.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1]
+        if text.rstrip().endswith("```"):
+            text = text.rstrip()[:-3]
+    return text.strip()
+
+
 def _parse(raw: str, rule: RuleResult) -> tuple[str, AnswerConfidence]:
     """LLM의 JSON 응답을 (답변, 확신도)로 파싱. 실패 시 원문을 답변으로 쓰고 partial."""
     try:
-        data = json.loads(raw)
+        data = json.loads(_strip_code_fence(raw))
         answer = (data.get("answer") or "").strip()
         conf = AnswerConfidence(data.get("confidence", "sufficient"))
         if not answer:

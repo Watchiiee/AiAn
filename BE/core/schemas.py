@@ -52,6 +52,7 @@ class Classification(BaseModel):
     confidence: float = Field(0.0, ge=0.0, le=1.0)
     domain: Domain = Field(Domain.ADMIN, description="질의 도메인 (검색 라우팅용)")
     category: BusinessCategory = Field(BusinessCategory.OTHER, description="업무영역 (부서 배정용, 조직도 기준)")
+    is_relevant: bool = Field(True, description="False면 협회 업무와 무관한 잡담/노이즈 (RAG 생략 대상)")
 
 
 # --- 2단계: 룰 적용 결과 ---

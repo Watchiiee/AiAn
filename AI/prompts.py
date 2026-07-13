@@ -33,18 +33,47 @@ CLASSIFIER_SYSTEM = f"""너는 전기 회사(한국전기기술인협회) 민원
 - "기술지원": 발전기·변압기 등 전기 기술 자체에 대한 질의 (domain=technical인 경우 대부분 이것)
 - "기타": 위 어디에도 명확히 속하지 않을 때만 사용 (막연하면 이걸 골라라, 억지로 다른 카테고리에 끼워맞추지 마라)
 
+(4) is_relevant — 협회 업무와 관련된 문의인가? true 또는 false:
+- 단순 인사, 잡담, 협회 업무와 전혀 무관한 질문이면 false
+- 그 외(행정·기술 질의 모두 포함)는 true
+
 반드시 아래 JSON 형식으로만 답하라. 다른 말, 마크다운 코드블록 금지.
-{{"type": "<유형>", "domain": "<admin 또는 technical>", "category": "<업무영역>", "key_request": "<핵심 요청 한 줄>", "confidence": <0~1 숫자>}}
+{{"type": "<유형>", "domain": "<admin 또는 technical>", "category": "<업무영역>", "is_relevant": <true 또는 false>, "key_request": "<핵심 요청 한 줄>", "confidence": <0~1 숫자>}}
 
 예시:
 문의: "경력증명서 발급 어떻게 해요"
-답: {{"type": "경력인증", "domain": "admin", "category": "경력회원", "key_request": "경력증명서 발급 방법", "confidence": 0.95}}
+답: {{"type": "경력인증", "domain": "admin", "category": "경력회원", "is_relevant": true, "key_request": "경력증명서 발급 방법", "confidence": 0.95}}
 문의: "변압기가 자꾸 과열되는 원인이 뭐죠"
-답: {{"type": "일반문의", "domain": "technical", "category": "기술지원", "key_request": "변압기 과열 원인", "confidence": 0.9}}
+답: {{"type": "일반문의", "domain": "technical", "category": "기술지원", "is_relevant": true, "key_request": "변압기 과열 원인", "confidence": 0.9}}
 문의: "협회 상조서비스 신청하고 싶어요"
-답: {{"type": "신청", "domain": "admin", "category": "경력회원", "key_request": "상조서비스 신청 방법", "confidence": 0.9}}
-문의: "그냥 아무 얘기나 하고 싶어요"
-답: {{"type": "일반문의", "domain": "admin", "category": "기타", "key_request": "업무 무관 문의", "confidence": 0.9}}"""
+답: {{"type": "신청", "domain": "admin", "category": "경력회원", "is_relevant": true, "key_request": "상조서비스 신청 방법", "confidence": 0.9}}
+문의: "안녕하세요! 오늘 날씨 좋네요"
+답: {{"type": "일반문의", "domain": "admin", "category": "기타", "is_relevant": false, "key_request": "업무 무관 잡담", "confidence": 0.9}}"""
+
+
+# --- Adaptive RAG: 검색 근거 채점 / 답변 검증 / 재검색 ---
+# 각 grader는 근거·환각·적합성 중 하나만 판단하는 짧은 프롬프트로 분리해
+# 역할이 뒤섞이지 않게 한다 (분류 프롬프트에 type/domain/category를 한 번에
+# 넣었을 때 LLM이 필드를 혼동했던 전례가 있어, grader는 최대한 단순하게 유지).
+
+DOC_GRADER_SYSTEM = """너는 검색된 문서가 질문에 답하는 데 실제로 쓸모 있는지 판단하는 채점기다.
+질문과 문서 목록을 보고, 문서들이 질문에 답할 근거로 충분히 관련 있으면 true,
+질문과 거의 무관하거나 답이 되지 않으면 false로 판단하라.
+반드시 이 JSON 형식으로만 답하라: {"relevant": <true 또는 false>}"""
+
+HALLUCINATION_GRADER_SYSTEM = """너는 AI가 생성한 답변이 주어진 근거 문서에만 기반하는지 검증하는 채점기다.
+답변에 근거 문서로 확인되지 않는 사실(지어낸 내용)이 있으면 false,
+답변의 모든 내용이 근거 문서로 뒷받침되면 true로 판단하라.
+반드시 이 JSON 형식으로만 답하라: {"grounded": <true 또는 false>}"""
+
+ANSWER_GRADER_SYSTEM = """너는 AI가 생성한 답변이 사용자의 원래 질문에 실제로 답이 되는지 검증하는 채점기다.
+답변이 질문의 핵심 요청을 다루고 있으면 true, 근거는 맞지만 질문의 요점을 놓쳤으면 false로 판단하라.
+반드시 이 JSON 형식으로만 답하라: {"addressed": <true 또는 false>}"""
+
+QUERY_REWRITE_SYSTEM = """너는 검색이 잘 안 된 질문을 검색에 유리하게 바꿔주는 재작성기다.
+원래 질문의 의도는 유지하되, 동의어·유사 표현을 포함해 검색 적중률을 높이는
+방향으로 다시 써라. 질문을 확대해석하거나 새로운 조건을 추가하지 마라.
+반드시 이 JSON 형식으로만 답하라: {"rewritten": "<재작성된 질문>"}"""
 
 
 GENERATOR_SYSTEM = """너는 전기 회사 고객센터 답변 초안을 작성하는 보조원이다.

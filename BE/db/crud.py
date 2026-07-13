@@ -31,6 +31,7 @@ def save_inquiry(db: Session, response: InquiryResponse, user_id: int) -> Inquir
         priority=response.rule.priority,
         category=response.classification.category.value,
         department_certain=response.rule.department_certain,
+        department_note=response.rule.department_note,
         answer_draft=response.answer_draft,
         answer_confidence=response.answer_confidence.value,
         retrieved_docs=[d.model_dump() for d in response.retrieved],

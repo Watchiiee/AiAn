@@ -86,6 +86,19 @@ def _parse_category(value) -> BusinessCategory:
         return BusinessCategory.OTHER
 
 
+def _strip_code_fence(raw: str) -> str:
+    """
+    CLOVA가 프롬프트 지시("코드블록 금지")를 무시하고 ```json ... ``` 으로
+    감싸서 줄 때가 있다. json.loads 전에 이걸 벗겨낸다.
+    """
+    text = raw.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1]        # 첫 줄(```json 등) 제거
+        if text.rstrip().endswith("```"):
+            text = text.rstrip()[:-3]
+    return text.strip()
+
+
 def classify(text: str) -> Classification:
     try:
         raw = call_llm(settings.classifier_model, CLASSIFIER_SYSTEM, text, max_tokens=256)
@@ -96,13 +109,14 @@ def classify(text: str) -> Classification:
         return _fallback(text)
 
     try:
-        data = json.loads(raw)
+        data = json.loads(_strip_code_fence(raw))
         return Classification(
             type=InquiryType(data["type"]),
             key_request=data.get("key_request", text[:50]),
             confidence=_normalize_confidence(data.get("confidence", 0.5)),
             domain=_parse_domain(data.get("domain", "admin")),
             category=_parse_category(data.get("category", "기타")),
+            is_relevant=bool(data.get("is_relevant", True)),
         )
     except (json.JSONDecodeError, ValueError, KeyError):
         return _fallback(text)

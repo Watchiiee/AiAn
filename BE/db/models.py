@@ -34,6 +34,7 @@ class InquiryRecord(Base):
     priority = Column(String, nullable=False)
     category = Column(String, nullable=True)             # 업무영역 (조직도 기준 부서매핑 근거)
     department_certain = Column(Boolean, default=True)    # False면 담당자 재배정 필요
+    department_note = Column(String, nullable=True)       # 담당자에게 보일 안내 문구 (있을 때만)
 
     # 답변
     answer_draft = Column(String, nullable=False)
