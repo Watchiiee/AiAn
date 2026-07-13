@@ -61,6 +61,25 @@ _MAX_REWRITE = 2
 _MAX_REGENERATE = 2
 
 
+def _get_langfuse_callbacks() -> list:
+    """
+    Langfuse 트레이싱 콜백. 키가 없으면 빈 리스트(트레이싱 없이 정상 동작) —
+    관측은 부가 기능이라 필수가 아니다 (DB 저장 실패해도 API가 안 죽는 것과 같은 원칙).
+    """
+    if not settings.langfuse_public_key or not settings.langfuse_secret_key:
+        return []
+    try:
+        import os
+        # langfuse 공식 SDK는 환경변수로 키를 읽는다 (.env 값을 그대로 넘겨줌)
+        os.environ.setdefault("LANGFUSE_PUBLIC_KEY", settings.langfuse_public_key)
+        os.environ.setdefault("LANGFUSE_SECRET_KEY", settings.langfuse_secret_key)
+        os.environ.setdefault("LANGFUSE_HOST", settings.langfuse_host)
+        from langfuse.langchain import CallbackHandler
+        return [CallbackHandler()]
+    except Exception:
+        return []
+
+
 class PipelineState(TypedDict):
     text: str
     search_query: str
@@ -291,7 +310,9 @@ def process_inquiry(text: str) -> InquiryResponse:
         "doc_relevant": False, "rewrite_count": 0, "hallucination_ok": True,
         "answer_ok": True, "regenerate_count": 0,
     }
-    result: PipelineState = _graph.invoke(init)
+    result: PipelineState = _graph.invoke(
+        init, config={"callbacks": _get_langfuse_callbacks(), "run_name": "process_inquiry"}
+    )
 
     return InquiryResponse(
         original_text=text,

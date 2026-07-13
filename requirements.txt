@@ -24,4 +24,7 @@ python-multipart
 # --- LangGraph (파이프라인 오케스트레이션) ---
 langgraph
 langchain-core
-EOF
+
+# --- 관측/트레이싱: Langfuse (LangGraph 파이프라인 시각화) ---
+langfuse
+langchain

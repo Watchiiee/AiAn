@@ -13,12 +13,6 @@ class Settings(BaseSettings):
     classifier_model: str = "HCX-005"   # 분류
     generator_model: str = "HCX-005"    # 답변 생성
 
-    # --- (보존) 이전 사용: Google Gemini ---
-    #   되돌리려면 아래 주석 해제 + has_api_key 를 gemini_api_key 기준으로 교체
-    # gemini_api_key: str = ""
-    # classifier_model: str = "gemini-2.5-flash-lite"
-    # generator_model: str = "gemini-2.5-flash-lite"
-
     use_stub_when_no_key: bool = True
 
     # RAG 근거 판정: 검색 최고 score가 이 값 미만이면 '명백히 근거 없음'으로 보고
@@ -26,9 +20,6 @@ class Settings(BaseSettings):
     no_evidence_threshold: float = 0.4
 
     # --- 데이터베이스 (문의 이력 저장) ---
-    # 로컬 개발: postgresql+psycopg2://<사용자>@localhost:5432/aian
-    # 배포 시:   .env 의 이 값만 클라우드 DB(GCP Cloud SQL 등) 주소로 교체하면 됨
-    #           (코드는 그대로, 접속 주소만 바뀜)
     database_url: str = "postgresql+psycopg2://localhost:5432/aian"
 
     # JWT 인증
@@ -36,10 +27,15 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60
 
+    # --- Langfuse (LangGraph 파이프라인 관측/트레이싱) ---
+    # 비워두면 트레이싱 없이 그냥 동작한다 (관측은 부가 기능, 필수 아님)
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_host: str = "https://cloud.langfuse.com"
+
     @property
     def has_api_key(self) -> bool:
         return bool(self.clova_api_key.strip())
-        # (Gemini 시절) return bool(self.gemini_api_key.strip())
 
 
 settings = Settings()
