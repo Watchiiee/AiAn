@@ -5,21 +5,13 @@ _TYPE_VALUES = [t.value for t in InquiryType if t != InquiryType.UNKNOWN]
 _CATEGORY_VALUES = [c.value for c in BusinessCategory]
 
 CLASSIFIER_SYSTEM = f"""너는 전기 회사(한국전기기술인협회) 민원을 분류하는 분류기다.
-문의 텍스트를 읽고 (1)유형(type), (2)도메인(domain), (3)업무영역(category) 세 가지를
-각각 판단하라. 셋은 서로 다른 항목이니 절대 혼동하지 마라.
+문의 텍스트를 읽고 (1)유형(type), (2)업무영역(category) 두 가지를
+각각 판단하라. 서로 다른 항목이니 절대 혼동하지 마라.
 
 (1) type — "이게 어떤 행위 요청인가". 반드시 다음 목록 중 하나 (다른 값 금지):
 {", ".join(_TYPE_VALUES)}
 
-(2) domain — "검색할 지식베이스가 행정용인가 기술용인가". "admin" 또는 "technical" 중 하나:
-- "admin": 행정·절차 문의 (신고·등록·발급·수수료·자격·기한·회원·교육신청 등). **전기요금·검침·계량기
-  교체절차·모자분할처럼 "요금이 얼마나 유리한가/어떻게 신청하는가"를 묻는 것은 계량기가
-  언급되어도 admin이다 — "계량기"라는 단어만 보고 무조건 technical로 판단하지 마라.**
-- "technical": 전기 기술 질의 (발전기·변압기·차단기·계전기·설비 원리/고장/용량계산 등).
-  계량기의 경우 "계량기가 어떤 원리로 동작하는가/왜 오차가 나는가"처럼 동작원리·고장진단을
-  묻는 것만 technical이다.
-
-(3) category — "실제 어느 부서 업무인가". 반드시 다음 목록 중 하나 (다른 값 금지):
+(2) category — "실제 어느 부서 업무인가". 반드시 다음 목록 중 하나 (다른 값 금지):
 {", ".join(_CATEGORY_VALUES)}
 - "전기안전관리자": 전기안전관리자 선임·해임·신고·벌칙 관련
 - "설계감리": 감리원배치, 설계업·감리업 등록·변경, 설계·감리 실적신고
@@ -28,29 +20,57 @@ CLASSIFIER_SYSTEM = f"""너는 전기 회사(한국전기기술인협회) 민원
 - "교육": 전기안전관리기술교육, 설계·감리교육 신청/이수/환불
 - "컨소시엄훈련": 국가인적자원개발컨소시엄 훈련
 - "홈페이지·전산": 홈페이지 이용, 인증서, 전산 오류
-- "기술지원": 발전기·변압기 등 전기 기술 자체에 대한 질의 (domain=technical인 경우 대부분 이것)
+- "기술지원": 발전기·변압기 등 전기 기술 자체에 대한 질의
 - "기타": 위 어디에도 명확히 속하지 않을 때만 사용 (막연하면 이걸 골라라, 억지로 다른 카테고리에 끼워맞추지 마라)
 
-(4) is_relevant — 협회 업무와 관련된 문의인가? true 또는 false:
+(3) is_relevant — 협회 업무와 관련된 문의인가? true 또는 false:
 - 단순 인사, 잡담, 협회 업무와 전혀 무관한 질문이면 false
 - 그 외(행정·기술 질의 모두 포함)는 true
 
 반드시 아래 JSON 형식으로만 답하라. 다른 말, 마크다운 코드블록 금지.
-{{"type": "<유형>", "domain": "<admin 또는 technical>", "category": "<업무영역>", "is_relevant": <true 또는 false>, "key_request": "<핵심 요청 한 줄>", "confidence": <0~1 숫자>}}
+{{"type": "<유형>", "category": "<업무영역>", "is_relevant": <true 또는 false>, "key_request": "<핵심 요청 한 줄>", "confidence": <0~1 숫자>}}
 
 예시:
 문의: "경력증명서 발급 어떻게 해요"
-답: {{"type": "경력인증", "domain": "admin", "category": "경력회원", "is_relevant": true, "key_request": "경력증명서 발급 방법", "confidence": 0.95}}
+답: {{"type": "경력인증", "category": "경력회원", "is_relevant": true, "key_request": "경력증명서 발급 방법", "confidence": 0.95}}
 문의: "변압기가 자꾸 과열되는 원인이 뭐죠"
-답: {{"type": "일반문의", "domain": "technical", "category": "기술지원", "is_relevant": true, "key_request": "변압기 과열 원인", "confidence": 0.9}}
+답: {{"type": "일반문의", "category": "기술지원", "is_relevant": true, "key_request": "변압기 과열 원인", "confidence": 0.9}}
 문의: "협회 상조서비스 신청하고 싶어요"
-답: {{"type": "신청", "domain": "admin", "category": "경력회원", "is_relevant": true, "key_request": "상조서비스 신청 방법", "confidence": 0.9}}
+답: {{"type": "신청", "category": "경력회원", "is_relevant": true, "key_request": "상조서비스 신청 방법", "confidence": 0.9}}
 문의: "산업용 계량기를 없애면 전기요금이 유리한가요"
-답: {{"type": "일반문의", "domain": "admin", "category": "기타", "is_relevant": true, "key_request": "산업용 계량기 폐지 시 요금 유불리", "confidence": 0.85}}
+답: {{"type": "일반문의", "category": "기타", "is_relevant": true, "key_request": "산업용 계량기 폐지 시 요금 유불리", "confidence": 0.85}}
 문의: "전력량계가 어떻게 유효전력만 측정하나요"
-답: {{"type": "일반문의", "domain": "technical", "category": "기술지원", "is_relevant": true, "key_request": "전력량계 유효전력 측정 원리", "confidence": 0.9}}
+답: {{"type": "일반문의", "category": "기술지원", "is_relevant": true, "key_request": "전력량계 유효전력 측정 원리", "confidence": 0.9}}
 문의: "안녕하세요! 오늘 날씨 좋네요"
-답: {{"type": "일반문의", "domain": "admin", "category": "기타", "is_relevant": false, "key_request": "업무 무관 잡담", "confidence": 0.9}}"""
+답: {{"type": "일반문의", "category": "기타", "is_relevant": false, "key_request": "업무 무관 잡담", "confidence": 0.9}}"""
+
+
+DOMAIN_CLASSIFIER_SYSTEM = """너는 문의를 "admin"(행정) 또는 "technical"(전기기술) 지식베이스 중
+어느 쪽에서 검색해야 하는지만 판단하는 분류기다. 다른 판단(유형·카테고리 등)은 신경 쓰지 말고
+이 판단 하나에만 집중하라.
+
+- "admin": 신고·등록·발급·수수료·자격·기한·회원·교육신청처럼 "협회에 어떻게 요청/신청하는가,
+  어떤 기준으로 자격·형태가 결정되는가"를 묻는 것. 전기요금·계량기 교체절차·선임형태(상주/대행)
+  판단·자료 다운로드 위치처럼, 기술적 단어(계량기, kW, 기술지원 등)가 섞여 있어도 결국 "제도·절차"를
+  묻는 것이면 admin이다.
+- "technical": 전기 설비 자체의 원리·고장·수치기준(전압·전류·용량·절연저항·접지저항 등)을 묻는 것.
+  숫자·단위(kW, kV, MΩ 등)나 "기준", "선정", "계산"이라는 단어가 있다고 무조건 admin으로 판단하지
+  마라 — 그 숫자·기준이 "제도상 자격/형태 결정"이 아니라 "설비의 물리적 특성"에 대한 것이면
+  technical이다.
+
+판단 기준은 "문장에 어떤 단어가 있는지"가 아니라 "결국 무엇을 결정해달라는 요청인지"이다.
+
+반드시 이 JSON 형식으로만 답하라: {"domain": "admin 또는 technical"}
+
+예시 (대조되는 쌍에 주의):
+문의: "산업용 계량기를 없애면 전기요금이 유리한가요" (요금 유불리 = 제도) → {"domain": "admin"}
+문의: "전력량계가 어떻게 유효전력만 측정하나요" (계측 원리 = 설비 특성) → {"domain": "technical"}
+문의: "발전설비가 300kW인데 상주로 선임해야 하나요, 대행으로 해도 되나요" (선임형태 결정 = 제도) → {"domain": "admin"}
+문의: "500kW 발전기가 자꾸 과부하로 멈추는 이유가 뭔가요" (고장원인 = 설비 특성) → {"domain": "technical"}
+문의: "작년 기술질의 답변 모아놓은 자료집 어디서 받을 수 있나요" ('기술'이 있어도 자료 위치 안내 = 제도) → {"domain": "admin"}
+문의: "기술지원 좀 받고 싶은데요, 콘덴서가 배가 부풀었는데 교체해야 하나요" ('기술지원'이 있어도 설비 고장진단 = 설비 특성) → {"domain": "technical"}
+문의: "전선굵기는 어떤 기준으로 선정하나요" ('기준·선정'이 있어도 설비 규격 산정 = 설비 특성) → {"domain": "technical"}
+문의: "협회 상조서비스 신청하고 싶어요" (신청 절차 = 제도) → {"domain": "admin"}"""
 
 
 GENERATOR_SYSTEM = """너는 전기 회사 고객센터 답변 초안을 작성하는 보조원이다.
