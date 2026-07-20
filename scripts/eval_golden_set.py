@@ -128,15 +128,25 @@ def eval_domain_classification(rows: list[dict]) -> list[dict]:
 
 def _summarize_retrieval(results: list[dict]) -> dict:
     if not results:
-        return {"avg_recall": 0.0, "hits": {k: 0 for k in HIT_KS}, "total": 0}
+        return {"avg_recall": 0.0, "hits": {k: 0 for k in HIT_KS}, "avg_precision": {k: 0.0 for k in HIT_KS}, "total": 0}
     hits = {k: 0 for k in HIT_KS}
+    precision_sums = {k: 0.0 for k in HIT_KS}
     for res in results:
         if res["all_found_max_rank"] is not None:
             for k in HIT_KS:
                 if res["all_found_max_rank"] <= k:
                     hits[k] += 1
+        # precision@k = (top-k 안에 들어온 정답청크 개수) / k
+        # recall/hit@k와 다른 지표: k를 늘릴수록 분모(k)가 커지므로 무작정 k를
+        # 늘리는 게 항상 유리하지 않다는 것을 보여준다(hit@k만으로는 이 함정을
+        #못 봄 — L-3에서 지적된 "hitrate@k만 보면 k 늘릴수록 좋아지는 게 당연"
+        # 문제를 보완하기 위한 지표).
+        for k in HIT_KS:
+            found_within_k = sum(1 for rk in res["ranks"] if 0 < rk <= k)
+            precision_sums[k] += found_within_k / k
     avg_recall = sum(r["recall"] for r in results) / len(results)
-    return {"avg_recall": avg_recall, "hits": hits, "total": len(results)}
+    avg_precision = {k: precision_sums[k] / len(results) for k in HIT_KS}
+    return {"avg_recall": avg_recall, "hits": hits, "avg_precision": avg_precision, "total": len(results)}
 
 
 def _summarize_domain(results: list[dict]) -> dict:
@@ -156,7 +166,8 @@ def _print_retrieval_summary(label: str, summary: dict):
     print(f"평균 recall: {summary['avg_recall']:.1%}")
     for k in HIT_KS:
         h = summary["hits"][k]
-        print(f"Hit@{k}: {h}/{summary['total']} ({h/summary['total']:.1%})")
+        p = summary["avg_precision"][k]
+        print(f"Hit@{k}: {h}/{summary['total']} ({h/summary['total']:.1%})  |  Precision@{k}: {p:.1%}")
 
 
 def _print_domain_summary(label: str, summary: dict):
@@ -211,7 +222,8 @@ def run(csv_paths: list[str]):
             f.write(f"- 평균 recall: {summary['avg_recall']:.1%}\n")
             for k in HIT_KS:
                 h = summary["hits"][k]
-                f.write(f"- Hit@{k}: {h}/{summary['total']} ({h/summary['total']:.1%})\n")
+                p = summary["avg_precision"][k]
+                f.write(f"- Hit@{k}: {h}/{summary['total']} ({h/summary['total']:.1%})  |  Precision@{k}: {p:.1%}\n")
         f.write("\n")
 
     def _write_domain_section(f, label, summary):
