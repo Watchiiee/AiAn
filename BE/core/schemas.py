@@ -77,7 +77,14 @@ class AnswerConfidence(str, Enum):
 class RetrievedDoc(BaseModel):
     content: str
     source: str = Field(..., description="출처 메타데이터 (답변 근거 표시용)")
-    score: float = 0.0
+    score: float = 0.0  # 코사인 유사도 (벡터 검색 고유값, 항상 이 의미로 고정)
+    rrf_score: float | None = Field(
+        default=None,
+        description="BM25+벡터 하이브리드 검색의 RRF(Reciprocal Rank Fusion) 융합점수. "
+                    "score(코사인 유사도)와는 스케일·의미가 다르므로 절대 혼용하지 말 것 — "
+                    "score는 절대적 유사도(0~1)이고 rrf_score는 순위 기반 상대점수라 "
+                    "0.02 같은 작은 값이 나와도 나쁜 게 아니다. 하이브리드 검색을 쓰지 않으면 None.",
+    )
 
 
 # --- 최종 응답: 한 건의 처리 결과 전체 ---
