@@ -6,39 +6,50 @@
 
 그래프 구조:
 
-    START → classify → rule → check_urgency ─┬─(is_urgent, 근거있음)──────→ urgent_escalate ──→ END
-                                                ├─(is_relevant=False, 잡담)──→ chitchat_decline ─→ END
-                                                └─(일반 업무 문의, RAG 경로)
-                                                         │
-                                                         ▼
-                                                     retrieve
-                                                         │
-                                                         ▼
-                                                    doc_grade ──(관련없음, rewrite<2)──→ rewrite_query ─┐
-                                                         │                                              │
-                                                         │                                   (retrieve로 루프)
-                                                (관련있음)│
-                                                         │        (관련없음, rewrite 소진)
-                                                         │              └──────────────────→ no_evidence → END
-                                                         ▼
-                                                     generate
-                                                         │
-                                                         ▼
-                                                hallucination_grade ──(실패, regen<2)──→ bump_regenerate ─┐
-                                                         │                                                 │
-                                                (근거일치)│                                      (generate로 루프)
-                                                         ▼
-                                                   answer_grade ──(부적합, regen<2)──→ bump_regenerate (위와 공유)
-                                                         │
-                                                (적합)   ▼
-                                                     finalize ──→ END
-                                                (재시도 소진 시 finalize에서 확신도 하향 조정)
+    START → classify → rule → check_urgency
+                                    │ (is_urgent면 rule.priority='긴급'로만 표시.
+                                    │  RAG는 긴급/비긴급 구분 없이 항상 그대로 진행 —
+                                    │  "초안 생성"과 "담당자 화면 노출 순서"는 별개 문제)
+                                    ▼
+                          ┌─(is_relevant=False, 잡담)──→ chitchat_decline ─→ END
+                          └─(그 외 전부, RAG 경로)
+                                    │
+                                    ▼
+                                retrieve
+                                    │
+                                    ▼
+                               doc_grade ──(관련없음, rewrite<2)──→ rewrite_query ─┐
+                                    │                                              │
+                                    │                                   (retrieve로 루프)
+                           (관련있음)│
+                                    │        (관련없음, rewrite 소진)
+                                    │              └──────────────────→ no_evidence → END
+                                    ▼
+                                generate
+                                    │
+                                    ▼
+                           hallucination_grade ──(실패, regen<2)──→ bump_regenerate ─┐
+                                    │                                                 │
+                           (근거일치)│                                      (generate로 루프)
+                                    ▼
+                              answer_grade ──(부적합, regen<2)──→ bump_regenerate (위와 공유)
+                                    │
+                           (적합)   ▼
+                                finalize ──→ END
+                           (재시도 소진 시 finalize에서 확신도 하향 조정)
 
 - check_urgency는 독립된 LLM 호출로 "긴급 여부"만 판단한다 (분류 프롬프트에
   섞지 않음 — 여러 판단을 한 프롬프트에 몰아넣으면 필드가 혼동됐던 전례가 있어
   판단 하나당 호출 하나 원칙을 지킨다). 키워드 매칭은 쓰지 않는다("긴급! 사랑해요"
   같은 문장에 단어만 있고 실제로는 무관한 경우를 잡아내지 못하는 거짓양성 위험이
   있어서다). is_urgent=True이면서 구체적 근거(urgent_reason)가 있을 때만 인정한다.
+- [설계 변경] 과거에는 is_urgent=True면 RAG를 완전히 건너뛰고 정형 안내문만 만들어
+  담당자에게 넘겼다(urgent_escalate 노드). 멘토링 피드백을 반영해 제거함 — 이유:
+  ① 진짜 재난·안전사고라면 초안 생성(수 초)이 담당자의 실제 대응 속도를 늦추지
+  않고, ② "긴급"이 문맥상 격한 어투일 뿐 실제로는 일반 민원인 경우, RAG를 건너뛰면
+  이 시스템의 핵심 가치(초안 자동생성)를 오히려 못 받는 역설이 생긴다. 그래서
+  "RAG를 거치느냐"와 "담당자 화면에서 얼마나 먼저 보이느냐"를 분리했다 — 후자는
+  rule.priority='긴급' 값으로 `/inquiry/pending` 정렬에서 처리한다(BE/db/crud.py).
 - 재검색(rewrite) 최대 2회, 재생성(hallucination/answer 실패 → generate) 최대 2회
   (두 grader가 카운터 공유).
 """
@@ -130,23 +141,15 @@ def node_check_urgency(state: PipelineState) -> dict:
 
 
 def _route_after_urgency(state: PipelineState) -> str:
-    """1단계 라우터: 긴급/잡담/일반업무 3분기."""
-    if state["is_urgent"]:
-        return "urgent"
+    """
+    라우터: 잡담이면 chitchat_decline, 그 외(긴급 포함)는 항상 RAG.
+    과거에는 is_urgent=True를 여기서 분기해 RAG를 건너뛰었으나 제거함(모듈
+    docstring의 [설계 변경] 참고) — 긴급 여부는 라우팅이 아니라 rule.priority
+    값으로만 반영되고, 담당자 화면 정렬(BE/db/crud.py)에서 소비된다.
+    """
     if not state["cls"].is_relevant:
         return "chitchat"
     return "rag"
-
-
-def node_urgent_escalate(state: PipelineState) -> dict:
-    """민감·긴급 민원: RAG/LLM 답변생성 없이 즉시 접수 확인만. 담당자에게 우선 전달."""
-    rule = state["rule"]
-    answer = (
-        "안녕하세요. 긴급/민감 민원으로 접수되어 담당자에게 즉시 전달되었습니다.\n\n"
-        f"{rule.department}에서 신속히 확인 후 회신드리겠습니다. 불편을 드려 죄송합니다."
-    )
-    return {"route": "urgent", "answer": answer, "answer_confidence": AnswerConfidence.PARTIAL,
-            "docs": [], "graded_docs": [], "llm_error": None}
 
 
 def node_chitchat_decline(state: PipelineState) -> dict:
@@ -284,7 +287,6 @@ def _build_graph():
     g.add_node("classify", node_classify)
     g.add_node("rule", node_rule)
     g.add_node("check_urgency", node_check_urgency)
-    g.add_node("urgent_escalate", node_urgent_escalate)
     g.add_node("chitchat_decline", node_chitchat_decline)
     g.add_node("retrieve", node_retrieve)
     g.add_node("doc_grade", node_doc_grade)
@@ -300,9 +302,8 @@ def _build_graph():
     g.add_edge("classify", "rule")
     g.add_edge("rule", "check_urgency")
     g.add_conditional_edges("check_urgency", _route_after_urgency, {
-        "urgent": "urgent_escalate", "chitchat": "chitchat_decline", "rag": "retrieve",
+        "chitchat": "chitchat_decline", "rag": "retrieve",
     })
-    g.add_edge("urgent_escalate", END)
     g.add_edge("chitchat_decline", END)
 
     g.add_edge("retrieve", "doc_grade")
