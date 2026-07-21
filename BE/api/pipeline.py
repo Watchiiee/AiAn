@@ -42,6 +42,7 @@
 - 재검색(rewrite) 최대 2회, 재생성(hallucination/answer 실패 → generate) 최대 2회
   (두 grader가 카운터 공유).
 """
+import os
 from typing import TypedDict, Optional
 
 from langgraph.graph import StateGraph, START, END
@@ -55,7 +56,10 @@ from BE.rules.rule_engine import apply_rules
 from AI.classifier.classifier import classify
 from AI.rag.retriever import retrieve
 from AI.rag.generator import generate, fallback_answer, _top_score
-from AI.rag.grading import grade_documents, grade_hallucination, grade_answer, rewrite_query, check_urgency
+from AI.rag.grading import (
+    grade_documents, grade_documents_individual, grade_hallucination, grade_answer,
+    rewrite_query, check_urgency,
+)
 
 _MAX_REWRITE = 2
 _MAX_REGENERATE = 2
@@ -86,6 +90,9 @@ class PipelineState(TypedDict):
     cls: Optional[Classification]
     rule: Optional[RuleResult]
     docs: Optional[list[RetrievedDoc]]
+    graded_docs: Optional[list[RetrievedDoc]]  # doc_grade가 실제로 사용 승인한 부분집합
+                                                 # (all_or_nothing 모드에서는 docs와 동일,
+                                                 # individual 모드에서는 개별선별된 것만)
     answer: Optional[str]
     answer_confidence: Optional[AnswerConfidence]
     llm_error: Optional[str]
@@ -139,7 +146,7 @@ def node_urgent_escalate(state: PipelineState) -> dict:
         f"{rule.department}에서 신속히 확인 후 회신드리겠습니다. 불편을 드려 죄송합니다."
     )
     return {"route": "urgent", "answer": answer, "answer_confidence": AnswerConfidence.PARTIAL,
-            "docs": [], "llm_error": None}
+            "docs": [], "graded_docs": [], "llm_error": None}
 
 
 def node_chitchat_decline(state: PipelineState) -> dict:
@@ -162,7 +169,7 @@ def node_chitchat_decline(state: PipelineState) -> dict:
         "department_note": "업무와 무관한 문의로 판단되어 안내 문구로 자동 응대되었습니다.",
     })
     return {"route": "chitchat", "rule": updated_rule, "answer": answer,
-            "answer_confidence": AnswerConfidence.INSUFFICIENT, "docs": [], "llm_error": None}
+            "answer_confidence": AnswerConfidence.INSUFFICIENT, "docs": [], "graded_docs": [], "llm_error": None}
 
 
 # --- RAG 경로: 검색 → 근거채점 → (재검색) → 답변생성 → 환각/적합성 채점 → (재생성) ---
@@ -172,11 +179,29 @@ def node_retrieve(state: PipelineState) -> dict:
     return {"docs": docs, "route": "rag"}
 
 
+# 비교실험용 스위치 ③: RAG_DOC_GRADE_MODE=all_or_nothing 이면 기존 방식(검색된 것
+# 전체를 한 번에 관련있다/없다로만 판단)으로 되돌아간다. 기본값은 "individual"
+# (개별 선별) — 89개 골든셋 전체 파이프라인 실측 결과(eval_pipeline_doc_grade.py)
+# all_or_nothing이 recall 19.1%(insufficient 71/89)까지 무너졌던 반면 individual은
+# recall 86.5%(insufficient 7/89)로 거의 완전히 회복시켜 기본값으로 승격함
+# (DECISION_LOG R절 참고). 원인은 min_k=6으로 검색결과가 늘어난 뒤, all_or_nothing이
+# "6개 전체가 관련있냐"는 이진판단을 반복 실패하며 재시도를 소진해 no_evidence로
+# 끝나는 경우가 급증한 것으로 확인됨(도입 시점 회귀, 두 컴포넌트 경계에서 발생).
+DOC_GRADE_MODE = os.environ.get("RAG_DOC_GRADE_MODE", "individual")
+
+
 def node_doc_grade(state: PipelineState) -> dict:
     docs = state["docs"]
     if _top_score(docs) < settings.no_evidence_threshold:
-        return {"doc_relevant": False}
-    return {"doc_relevant": grade_documents(state["text"], docs)}
+        return {"doc_relevant": False, "graded_docs": []}
+
+    if DOC_GRADE_MODE == "individual":
+        selected_idx = grade_documents_individual(state["text"], docs)
+        graded = [docs[i] for i in selected_idx]
+        return {"doc_relevant": bool(graded), "graded_docs": graded}
+
+    relevant = grade_documents(state["text"], docs)
+    return {"doc_relevant": relevant, "graded_docs": docs if relevant else []}
 
 
 def _route_after_doc_grade(state: PipelineState) -> str:
@@ -202,19 +227,21 @@ def node_no_evidence(state: PipelineState) -> dict:
 
 
 def node_generate(state: PipelineState) -> dict:
+    docs = state.get("graded_docs") or state["docs"]
     try:
-        answer, conf = generate(state["text"], state["cls"], state["rule"], state["docs"])
+        answer, conf = generate(state["text"], state["cls"], state["rule"], docs)
         return {"answer": answer, "answer_confidence": conf, "llm_error": None}
     except LLMError as e:
         err = str(e)
-        answer = fallback_answer(state["text"], state["cls"], state["rule"], state["docs"], reason=err)
+        answer = fallback_answer(state["text"], state["cls"], state["rule"], docs, reason=err)
         return {"answer": answer, "answer_confidence": AnswerConfidence.PARTIAL, "llm_error": err}
 
 
 def node_hallucination_grade(state: PipelineState) -> dict:
     if state["llm_error"]:
         return {"hallucination_ok": True}
-    return {"hallucination_ok": grade_hallucination(state["answer"], state["docs"])}
+    docs = state.get("graded_docs") or state["docs"]
+    return {"hallucination_ok": grade_hallucination(state["answer"], docs)}
 
 
 def _route_after_hallucination(state: PipelineState) -> str:
@@ -305,6 +332,7 @@ def process_inquiry(text: str) -> InquiryResponse:
     """외부 인터페이스는 기존과 동일. LangGraph 사용은 내부 구현 세부사항."""
     init: PipelineState = {
         "text": text, "search_query": text, "cls": None, "rule": None, "docs": None,
+        "graded_docs": None,
         "answer": None, "answer_confidence": None, "llm_error": None, "route": "",
         "is_urgent": False, "urgent_reason": None,
         "doc_relevant": False, "rewrite_count": 0, "hallucination_ok": True,

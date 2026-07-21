@@ -10,8 +10,8 @@ import json
 
 from AI.llm import call_llm, LLMError
 from AI.prompts import (
-    DOC_GRADER_SYSTEM, HALLUCINATION_GRADER_SYSTEM, ANSWER_GRADER_SYSTEM, QUERY_REWRITE_SYSTEM,
-    URGENCY_GRADER_SYSTEM,
+    DOC_GRADER_SYSTEM, DOC_GRADER_SYSTEM_INDIVIDUAL, HALLUCINATION_GRADER_SYSTEM,
+    ANSWER_GRADER_SYSTEM, QUERY_REWRITE_SYSTEM, URGENCY_GRADER_SYSTEM,
 )
 from BE.core.config import settings
 from BE.core.schemas import RetrievedDoc
@@ -48,6 +48,35 @@ def grade_documents(question: str, docs: list[RetrievedDoc]) -> bool:
     docs_text = "\n".join(f"- {d.content}" for d in docs)
     user = f"[질문] {question}\n\n[검색된 문서]\n{docs_text}"
     return _safe_bool_call(DOC_GRADER_SYSTEM, user, "relevant", default=False)
+
+
+def grade_documents_individual(question: str, docs: list[RetrievedDoc]) -> list[int]:
+    """
+    검색된 문서 각각을 개별 판단해, 관련 있다고 판단한 것들의 인덱스(docs 리스트 기준)를
+    반환한다. 판단 실패 시 보수적으로 빈 리스트(재검색 유도 — grade_documents와 동일한
+    실패 시 정책).
+
+    grade_documents()(전체를 하나로 묶어 true/false)와 병행 존재 — pipeline.py의
+    node_doc_grade가 RAG_DOC_GRADE_MODE 환경변수로 둘 중 하나를 선택해 쓴다
+    (하이브리드·동적top_k와 같은 단계적 도입 패턴, DECISION_LOG 참고).
+    """
+    if not docs:
+        return []
+    docs_text = "\n".join(f"[{i}] (검색점수={d.score}) {d.content}" for i, d in enumerate(docs))
+    user = f"[질문] {question}\n\n[검색된 문서 목록]\n{docs_text}"
+    try:
+        raw = call_llm(settings.classifier_model, DOC_GRADER_SYSTEM_INDIVIDUAL, user, max_tokens=128)
+    except LLMError:
+        return []
+    if raw is None:
+        return []
+    try:
+        data = json.loads(_strip_code_fence(raw))
+        selected = data.get("selected", [])
+        # 인덱스 범위를 벗어나는 값(LLM이 잘못된 번호를 줄 경우)은 방어적으로 걸러냄
+        return [i for i in selected if isinstance(i, int) and 0 <= i < len(docs)]
+    except (json.JSONDecodeError, ValueError, AttributeError, TypeError):
+        return []
 
 
 def grade_hallucination(answer: str, docs: list[RetrievedDoc]) -> bool:
