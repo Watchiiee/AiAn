@@ -7,11 +7,13 @@ LLM 호출 실패나 파싱 실패 시 '보수적인 기본값'으로 처리한�
 근거 없이 사람을 호출하기보다 안전한 쪽으로 처리한다.
 """
 import json
+import re
 
 from AI.llm import call_llm, LLMError
+
 from AI.prompts import (
     DOC_GRADER_SYSTEM, DOC_GRADER_SYSTEM_INDIVIDUAL, HALLUCINATION_GRADER_SYSTEM,
-    ANSWER_GRADER_SYSTEM, QUERY_REWRITE_SYSTEM, URGENCY_GRADER_SYSTEM,
+    ANSWER_GRADER_SYSTEM, QUERY_REWRITE_SYSTEM, URGENCY_GRADER_SYSTEM, QUERY_DECOMPOSE_SYSTEM,
 )
 from BE.core.config import settings
 from BE.core.schemas import RetrievedDoc
@@ -130,3 +132,44 @@ def check_urgency(text: str) -> tuple[bool, str | None]:
         return False, None  # is_urgent=True인데 이유가 없으면 근거 부족으로 보고 기각
     except (json.JSONDecodeError, ValueError, AttributeError):
         return False, None
+
+
+def decompose_query(text: str) -> list[str]:
+    """
+    문의 안에 서로 다른 주제의 질문이 여러 개 섞여 있으면 독립된 검색 질문들로
+    분리한다. 분해할 필요가 없으면 원문 하나만 담긴 리스트를 반환한다.
+
+    실측(M-4)으로 확인된 진짜 복합질문 비율은 3.8%로 낮은 편이라, "잘못 쪼개서
+    없던 문제를 만드는 위험"이 이 기능의 가장 큰 리스크다. 그래서 파싱 실패나
+    호출 실패 시에는 항상 "분해하지 않음"(원문 그대로 하나)으로 안전하게 폴백한다
+    — 다른 grader들의 "보수적 기본값" 원칙과 같되, 여기서는 "분해 안 함"이
+    보수적인 쪽이다.
+
+    파싱은 classify_domain()에서 겪은 문제(CLOVA가 순수 JSON을 안 지키고 설명글을
+    먼저 쓰는 경우가 있음)를 감안해 2단계로 방어한다: ① 순수 JSON, ② 실패하면
+    "sub_questions" 배열 안의 문자열들을 정규식으로 직접 추출.
+    """
+    try:
+        raw = call_llm(settings.classifier_model, QUERY_DECOMPOSE_SYSTEM, text, max_tokens=256)
+    except LLMError:
+        return [text]
+    if raw is None:
+        return [text]
+
+    try:
+        data = json.loads(_strip_code_fence(raw))
+        sub_qs = data.get("sub_questions", [])
+        cleaned = [q.strip() for q in sub_qs if isinstance(q, str) and q.strip()]
+        return cleaned if cleaned else [text]
+    except (json.JSONDecodeError, ValueError, AttributeError, TypeError):
+        pass
+
+    # 순수 JSON이 아니었던 경우: "sub_questions": [...] 배열 안의 문자열들을 정규식으로 추출
+    match = re.search(r'"sub_questions"\s*:\s*\[(.*?)\]', raw, re.DOTALL)
+    if match:
+        items = re.findall(r'"((?:[^"\\]|\\.)*)"', match.group(1))
+        cleaned = [item.strip() for item in items if item.strip()]
+        if cleaned:
+            return cleaned
+
+    return [text]  # 뭘 해도 못 찾으면 안전하게 "분해 안 함"
