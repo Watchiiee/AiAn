@@ -37,6 +37,8 @@ export interface RetrievedDoc {
   source: string;
   /** 유사도 점수. 0.4 이하면 "근거 약함" */
   score: number;
+  /** AI가 이 문서를 실제로 답변 생성에 사용했는지. 기본값 true */
+  selected: boolean;
 }
 
 /** POST /api/inquiry 의 요청 바디 */

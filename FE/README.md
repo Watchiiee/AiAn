@@ -97,7 +97,8 @@ src/
 │  ├─ useMyInquiries.ts      # 내 문의 목록 (로그인 기반, 검색 없음)
 │  ├─ usePendingInquiries.ts # 검토 대기 목록 (staff 이상)
 │  ├─ useReviewInquiry.ts    # 답변 승인 (그대로/수정, staff 이상)
-│  └─ useUpdateRule.ts       # 부서/우선순위 재배정 (master 전용)
+│  ├─ useUpdateRule.ts       # 부서/우선순위 재배정 (master 전용)
+│  └─ useRequestDeptChange.ts # "이 부서 아닌 것 같다" 요청 (staff 이상)
 │
 ├─ utils/
 │  ├─ badges.ts              # 배지/색상 → Tailwind 클래스 (근거 약함/확신도 포함)
@@ -119,12 +120,12 @@ src/
    │  ├─ MyInquiries.tsx     # 내 문의함 목록 (상태 필터: 전체/대기중/완료)
    │  └─ MyInquiryItem.tsx   # 목록 항목 (펼치면 답변 표시)
    └─ staff/
-      ├─ Inbox.tsx           # 검토 대기 목록 (우선순위 필터 + 정렬)
+      ├─ Inbox.tsx           # 검토 대기 목록 (우선순위 필터. 정렬은 서버 순서 그대로 신뢰)
       ├─ FilterBar.tsx
-      ├─ InboxItem.tsx
+      ├─ InboxItem.tsx       # 부서변경요청 배지 포함
       ├─ TicketDetail.tsx    # 원문 + 분류 + 룰 + 초안 + 근거문서 + 승인 액션
       ├─ ClassificationCard.tsx  # 유형·핵심요청·확신도바·분류불확실 경고·domain 태그
-      ├─ RuleCard.tsx            # 우선순위·부서 (master만 편집 가능, staff는 읽기전용)
+      ├─ RuleCard.tsx            # master: 재배정 UI / staff: 읽기전용 + 부서변경 요청 폼
       ├─ DraftEditor.tsx         # 편집 가능한 AI 초안 + answer_confidence 배지
       ├─ EvidenceList.tsx        # RAG 근거 문서 (유사도/근거약함)
       └─ LlmErrorBanner.tsx      # LLM 실패 배너
@@ -211,3 +212,48 @@ staff 계정으로 `PATCH /api/inquiry/{id}/rule` 을 직접 호출하면 서버
 **초안 임시 저장**
 - 서버에 저장하지 않는다(백엔드팀 결정). 담당자 화면의 편집 중인 초안은 `StaffPage` 의
   로컬 state(`drafts`)에만 있으며, 새로고침하면 사라진다. 승인해야 서버에 반영된다.
+
+---
+
+## 8. v4 델타 반영 사항
+
+BACKEND_HANDOFF_v4 이후 추가된 변경분. 전체 흐름은 6~7번 그대로고, 아래만 달라졌다.
+
+**부서변경 요청 (신규, staff 이상)**
+- `PATCH /api/inquiry/{id}/request-department-change` — staff가 "이 부서 담당이
+  아닌 것 같다"는 표시만 남긴다(실제 재배정은 아님). body: `{ reason, suggested_department? }`.
+- `PendingInquiry`에 `dept_change_requested`, `dept_change_reason`,
+  `dept_change_suggested`, `dept_change_requested_by` 4개 필드가 추가됐다.
+- `RuleCard`가 역할별로 다르게 그린다:
+  - **master**: 재배정 셀렉트 위에 요청 내용(있으면)을 보라색 카드로 보여준다.
+  - **staff**: 우선순위/부서 읽기 전용 + 아직 요청 안 했으면 "이 부서가 아닌 것
+    같아요 · 변경 요청" 버튼(이유 입력 + 제안 부서 선택), 요청했으면 요청 내용 표시.
+- `InboxItem`에도 요청된 항목은 "부서변경 요청됨" 배지가 붙는다.
+- master가 `/rule`로 실제 재배정하면 이 4개 필드는 서버가 자동으로 초기화한다
+  (프론트에서 따로 지우는 로직 없음 — 응답을 그대로 캐시에 반영하면 자동으로 사라짐).
+
+**`PATCH /rule` 응답 타입 변경 (중요)**
+- 이전엔 `MyInquiry`(간단 정보)였는데, 이제 `PendingInquiry`(전체 정보)로 온다.
+- `useUpdateRule`, `useRequestDeptChange` 둘 다 이 전체 응답을 받아서
+  `pendingInquiries` 캐시의 해당 항목을 `setQueryData`로 직접 교체한다.
+  (재조회 없이 즉시 반영 — 예전처럼 `invalidateQueries`로 통째로 다시 불러오지 않음)
+
+**`GET /pending` 정렬은 서버가 담당**
+- 서버가 "긴급 최상단 + 나머지는 created_at 오래된순"으로 정렬해서 준다.
+- 프론트는 더 이상 재정렬하지 않는다. `Inbox.tsx`에서 우선순위 필터링만 하고
+  순서는 서버가 준 그대로 렌더링한다. (`sortByPriority`, `PRIORITY_RANK` 삭제됨)
+
+**긴급 문의도 이제 AI 초안이 생성됨**
+- 예전엔 `우선순위: 긴급`이면 고정 안내문이 즉시 왔는데, 이제는 일반 문의와
+  같은 파이프라인(검색 + 초안 생성)을 통과해서 응답이 조금 더 걸릴 수 있다.
+  프론트 로딩 스피너는 이미 있으니 코드 변경은 없음 — 그냥 참고용.
+
+**아직 안 바뀐 것**
+- (현재 없음 — 이전에 있던 "retrieved가 전체만 보여줌" 이슈는 아래 selected 필드로 해결됨)
+
+**`retrieved[].selected` 추가 (근거 문서 투명성)**
+- `retrieved` 목록은 여전히 "검색된 전체 문서"를 보여준다(개수 안 줄어듦). 대신
+  각 항목에 `selected: boolean`이 붙어서 AI가 실제로 답변 생성에 그 문서를
+  썼는지(`true`) 아니면 검색은 됐지만 안 썼는지(`false`)를 구분할 수 있다.
+- `EvidenceList`가 `selected: false`인 카드는 흐리게(`opacity-60`) 표시하고
+  "참고만 함" 배지를, `selected: true`인 카드는 "✓ 답변에 사용됨" 배지를 붙인다.

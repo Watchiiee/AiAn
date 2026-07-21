@@ -29,15 +29,31 @@ export default function EvidenceList({ retrieved }: EvidenceListProps) {
           return (
             <div
               key={i}
-              className="rounded-[11px] border border-[#e2e8f0] bg-[#fbfcfe] px-4 py-3.5"
+              className={[
+                "rounded-[11px] border px-4 py-3.5 transition-opacity",
+                r.selected
+                  ? "border-[#e2e8f0] bg-[#fbfcfe]"
+                  : "border-[#e2e8f0] bg-[#f8fafc] opacity-60",
+              ].join(" ")}
             >
               <div className="mb-[7px] flex items-center justify-between gap-2.5">
                 <span className="overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[12px] font-bold text-[#475569]">
                   {r.source}
                 </span>
-                <span className={scoreBadgeClass(r.score)}>
-                  유사도 {r.score.toFixed(3)}
-                </span>
+                <div className="flex flex-none items-center gap-1.5">
+                  {r.selected ? (
+                    <span className="inline-flex items-center gap-1 rounded-md border border-[#bfdbfe] bg-[#eff6ff] px-2 py-0.5 text-[11px] font-extrabold text-[#2563eb]">
+                      ✓ 답변에 사용됨
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-md border border-[#e2e8f0] bg-[#f1f5f9] px-2 py-0.5 text-[11px] font-bold text-[#94a3b8]">
+                      참고만 함
+                    </span>
+                  )}
+                  <span className={scoreBadgeClass(r.score)}>
+                    유사도 {r.score.toFixed(3)}
+                  </span>
+                </div>
               </div>
               <p className="text-[13px] leading-relaxed text-[#64748b]">
                 {r.content}
