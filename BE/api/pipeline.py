@@ -343,11 +343,18 @@ def process_inquiry(text: str) -> InquiryResponse:
         init, config={"callbacks": _get_langfuse_callbacks(), "run_name": "process_inquiry"}
     )
 
+    docs = result["docs"] or []
+    graded = result.get("graded_docs") or []
+    # 검색된 전체(docs)는 그대로 다 보여주되, doc_grade가 실제로 답변에 쓰기로
+    # 선택한 것만 selected=True로 표시 (개별선별 모드가 아니면 graded==docs라
+    # 전부 True가 되어 예전 동작과 동일함).
+    retrieved = [d.model_copy(update={"selected": d in graded}) for d in docs]
+
     return InquiryResponse(
         original_text=text,
         classification=result["cls"],
         rule=result["rule"],
-        retrieved=result["docs"] or [],
+        retrieved=retrieved,
         answer_draft=result["answer"],
         answer_confidence=result["answer_confidence"],
         used_llm=settings.has_api_key and result["llm_error"] is None,

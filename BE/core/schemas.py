@@ -85,6 +85,15 @@ class RetrievedDoc(BaseModel):
                     "score는 절대적 유사도(0~1)이고 rrf_score는 순위 기반 상대점수라 "
                     "0.02 같은 작은 값이 나와도 나쁜 게 아니다. 하이브리드 검색을 쓰지 않으면 None.",
     )
+    selected: bool = Field(
+        default=True,
+        description="doc_grade가 이 문서를 실제로 답변 생성에 사용하기로 선택했는지. "
+                    "이 리스트(retrieved)는 검색된 전체를 그대로 보여주되, doc_grade가 "
+                    "개별선별 모드(individual)일 때는 일부만 True가 된다 — 담당자가 "
+                    "'AI가 뭘 보고 뭘 실제로 썼는지'를 구분해서 볼 수 있게 하기 위함. "
+                    "기본값 True는 이 필드가 없던 예전 데이터와의 하위호환용(모드와 "
+                    "무관하게 전부 보여주던 기존 동작과 동일하게 처리).",
+    )
 
 
 # --- 최종 응답: 한 건의 처리 결과 전체 ---
