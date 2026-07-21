@@ -31,10 +31,3 @@ export const LOW_CONFIDENCE_THRESHOLD = 0.5;
 
 /** 유사도가 이 값 이하이면 "근거 약함" */
 export const WEAK_SCORE_THRESHOLD = 0.4;
-
-/** 긴급 우선 정렬 순서 */
-export const PRIORITY_RANK: Record<Priority, number> = {
-  긴급: 0,
-  높음: 1,
-  보통: 2,
-};

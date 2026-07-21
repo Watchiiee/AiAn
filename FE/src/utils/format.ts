@@ -1,4 +1,4 @@
-import { PRIORITY_RANK, LOW_CONFIDENCE_THRESHOLD } from "../constants/options";
+import { LOW_CONFIDENCE_THRESHOLD } from "../constants/options";
 
 /** 확신도가 낮은지 (분류 불확실 표시용) */
 export function isLowConfidence(confidence: number): boolean {
@@ -15,15 +15,6 @@ export function confidenceColor(confidence: number): string {
   if (confidence >= 0.7) return "#16a34a";
   if (confidence >= LOW_CONFIDENCE_THRESHOLD) return "#d97706";
   return "#dc2626";
-}
-
-/** 긴급 우선 정렬 (담당자 검토 대기 목록용) */
-export function sortByPriority<T extends { priority: keyof typeof PRIORITY_RANK }>(
-  items: T[],
-): T[] {
-  return [...items].sort(
-    (a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority],
-  );
 }
 
 /** "2026-07-08T14:10:29" 같은 ISO 문자열을 화면용으로 짧게 표시 */

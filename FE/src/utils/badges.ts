@@ -71,6 +71,11 @@ export function isWeakScore(score: number): boolean {
   return score <= WEAK_SCORE_THRESHOLD;
 }
 
+/** "부서변경 요청됨" 배지. 다른 배지들과 안 헷갈리게 보라 계열로. */
+export function deptChangeBadgeClass(): string {
+  return "inline-flex items-center gap-1 rounded-md border border-[#c4b5fd] bg-[#f5f3ff] px-2 py-0.5 text-[11px] font-extrabold text-[#7c3aed]";
+}
+
 /** 답변이 근거로 얼마나 뒷받침되는지 (sufficient/partial/insufficient) — 담당자 검토용 */
 export function answerConfidenceLabel(v: AnswerConfidence): string {
   switch (v) {

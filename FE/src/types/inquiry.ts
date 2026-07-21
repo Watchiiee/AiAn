@@ -87,6 +87,15 @@ export interface PendingInquiry {
   used_llm: boolean;
   /** null 이면 정상, 값이 있으면 LLM 생성 실패 */
   llm_error: string | null;
+
+  // v4 델타 — staff의 부서변경 요청 표시. master가 /rule 로 재배정하면
+  // 서버가 이 4개를 자동으로 초기화한다 (프론트에서 따로 지울 필요 없음).
+  /** staff가 부서변경을 요청했는지 */
+  dept_change_requested: boolean;
+  dept_change_reason: string | null;
+  dept_change_suggested: string | null;
+  /** 요청한 staff의 이메일 */
+  dept_change_requested_by: string | null;
 }
 
 /** PATCH /api/inquiry/{id}/review 의 요청 바디 */
@@ -107,5 +116,19 @@ export interface RuleUpdateRequest {
   department?: string;
 }
 
-/** PATCH /api/inquiry/{id}/rule 의 응답. /my, /review 와 동일 형식. */
-export type RuleUpdateResponse = MyInquiry;
+/**
+ * PATCH /api/inquiry/{id}/rule 의 응답.
+ * ⚠️ v4 델타에서 바뀜: 이전엔 MyInquiry(간단 정보)였는데, 이제는
+ * PendingInquiry(분류·근거문서·confidence 등 전체 정보)로 온다.
+ */
+export type RuleUpdateResponse = PendingInquiry;
+
+/** PATCH /api/inquiry/{id}/request-department-change 의 요청 바디 (staff 이상) */
+export interface DeptChangeRequest {
+  reason: string;
+  /** 선택. 없으면 null */
+  suggested_department?: string | null;
+}
+
+/** PATCH /api/inquiry/{id}/request-department-change 의 응답. /pending 항목과 동일. */
+export type DeptChangeResponse = PendingInquiry;

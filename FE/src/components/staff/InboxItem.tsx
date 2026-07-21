@@ -1,5 +1,10 @@
 import type { PendingInquiry } from "../../types/inquiry";
-import { priorityBadgeClass, priorityDotClass, typeBadgeClass } from "../../utils/badges";
+import {
+  priorityBadgeClass,
+  priorityDotClass,
+  typeBadgeClass,
+  deptChangeBadgeClass,
+} from "../../utils/badges";
 import { formatDateTime } from "../../utils/format";
 
 interface InboxItemProps {
@@ -19,7 +24,7 @@ export default function InboxItem({ inquiry, selected, onSelect }: InboxItemProp
           : "border-transparent hover:bg-[#f8fafc]",
       ].join(" ")}
     >
-      <div className="mb-[7px] flex items-center gap-1.5">
+      <div className="mb-[7px] flex flex-wrap items-center gap-1.5">
         <span className={priorityBadgeClass(inquiry.priority)}>
           <span className={priorityDotClass(inquiry.priority)} />
           {inquiry.priority}
@@ -27,6 +32,9 @@ export default function InboxItem({ inquiry, selected, onSelect }: InboxItemProp
         <span className={typeBadgeClass(inquiry.inquiry_type)}>
           {inquiry.inquiry_type}
         </span>
+        {inquiry.dept_change_requested && (
+          <span className={deptChangeBadgeClass()}>부서변경 요청됨</span>
+        )}
       </div>
 
       <p className="mb-1.5 line-clamp-2 text-[13.5px] font-semibold leading-snug text-[#1e293b]">

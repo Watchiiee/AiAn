@@ -5,6 +5,7 @@ import Spinner from "../components/common/Spinner";
 import { usePendingInquiries } from "../hooks/usePendingInquiries";
 import { useReviewInquiry } from "../hooks/useReviewInquiry";
 import { useUpdateRule } from "../hooks/useUpdateRule";
+import { useRequestDeptChange } from "../hooks/useRequestDeptChange";
 import { useAuth } from "../context/AuthContext";
 import type { Priority } from "../types/inquiry";
 
@@ -15,6 +16,7 @@ export default function StaffPage() {
   const { data: inquiries, isLoading, isError } = usePendingInquiries();
   const review = useReviewInquiry();
   const updateRule = useUpdateRule();
+  const requestDeptChange = useRequestDeptChange();
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [priorityFilter, setPriorityFilter] = useState("전체");
@@ -65,6 +67,20 @@ export default function StaffPage() {
     );
   }
 
+  function handleRequestDeptChange(
+    id: number,
+    reason: string,
+    suggestedDepartment: string | null,
+  ) {
+    requestDeptChange.mutate(
+      { id, reason, suggestedDepartment },
+      {
+        onSuccess: () => showToast("부서 변경을 요청했습니다"),
+        onError: () => showToast("요청에 실패했어요. 다시 시도해 주세요."),
+      },
+    );
+  }
+
   if (isLoading) {
     return (
       <main className="flex flex-1 items-center justify-center">
@@ -109,6 +125,10 @@ export default function StaffPage() {
             canReassign={canReassign}
             onSaveRule={(p, d) => handleSaveRule(selected.id, p, d)}
             isSavingRule={updateRule.isPending}
+            onRequestDeptChange={(reason, suggested) =>
+              handleRequestDeptChange(selected.id, reason, suggested)
+            }
+            isRequestingDeptChange={requestDeptChange.isPending}
           />
         ) : (
           <div className="flex h-full items-center justify-center">

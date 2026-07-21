@@ -3,7 +3,6 @@ import type { PendingInquiry } from "../../types/inquiry";
 import FilterBar from "./FilterBar";
 import InboxItem from "./InboxItem";
 import { PRIORITY_FILTERS } from "../../constants/options";
-import { sortByPriority } from "../../utils/format";
 
 interface InboxProps {
   inquiries: PendingInquiry[];
@@ -20,12 +19,11 @@ export default function Inbox({
   priorityFilter,
   onPriorityFilter,
 }: InboxProps) {
+  // v4 델타: 서버가 이제 긴급 우선 + created_at 오래된순으로 정렬해서 준다.
+  // 여기서 다시 정렬하면 서버 정렬을 덮어쓰게 되므로, 필터링만 하고 순서는 그대로 둔다.
   const filtered = useMemo(() => {
-    const list =
-      priorityFilter === "전체"
-        ? inquiries
-        : inquiries.filter((t) => t.priority === priorityFilter);
-    return sortByPriority(list);
+    if (priorityFilter === "전체") return inquiries;
+    return inquiries.filter((t) => t.priority === priorityFilter);
   }, [inquiries, priorityFilter]);
 
   return (

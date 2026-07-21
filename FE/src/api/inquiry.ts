@@ -8,6 +8,8 @@ import type {
   ReviewResponse,
   RuleUpdateRequest,
   RuleUpdateResponse,
+  DeptChangeRequest,
+  DeptChangeResponse,
 } from "../types/inquiry";
 
 /**
@@ -50,6 +52,7 @@ export function reviewInquiry(
 /**
  * 담당자 전용(master만) — 부서/우선순위 재배정.
  * 하나만 보내면 그 필드만 바뀐다. staff 계정으로 호출하면 403.
+ * ⚠️ 응답이 PendingInquiry(전체 정보)로 온다. (v4 델타 — 예전엔 MyInquiry 였음)
  */
 export function updateInquiryRule(
   id: number,
@@ -58,5 +61,25 @@ export function updateInquiryRule(
   return apiPatch<RuleUpdateRequest, RuleUpdateResponse>(
     `/api/inquiry/${id}/rule`,
     patch,
+  );
+}
+
+/**
+ * 담당자(staff 이상) — "이 부서 담당이 아닌 것 같다"는 표시만 남긴다.
+ * 실제로 부서를 바꾸지는 않는다 — master가 /pending 에서 표시를 보고 /rule 로 재배정한다.
+ * 이미 검토완료된 문의에는 요청할 수 없다 (404).
+ */
+export function requestDepartmentChange(
+  id: number,
+  reason: string,
+  suggestedDepartment: string | null = null,
+): Promise<DeptChangeResponse> {
+  const body: DeptChangeRequest = {
+    reason,
+    suggested_department: suggestedDepartment,
+  };
+  return apiPatch<DeptChangeRequest, DeptChangeResponse>(
+    `/api/inquiry/${id}/request-department-change`,
+    body,
   );
 }

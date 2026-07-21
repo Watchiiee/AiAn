@@ -19,6 +19,10 @@ interface TicketDetailProps {
   canReassign: boolean;
   onSaveRule: (priority: Priority, department: string) => void;
   isSavingRule: boolean;
+
+  /** staff 이상 — "이 부서 아닌 것 같다" 요청 */
+  onRequestDeptChange: (reason: string, suggestedDepartment: string | null) => void;
+  isRequestingDeptChange: boolean;
 }
 
 export default function TicketDetail({
@@ -32,6 +36,8 @@ export default function TicketDetail({
   canReassign,
   onSaveRule,
   isSavingRule,
+  onRequestDeptChange,
+  isRequestingDeptChange,
 }: TicketDetailProps) {
   const edited = draft.trim() !== inquiry.answer_draft.trim();
 
@@ -65,11 +71,12 @@ export default function TicketDetail({
           domain={inquiry.domain}
         />
         <RuleCard
-          priority={inquiry.priority}
-          department={inquiry.department}
-          editable={canReassign}
-          onSave={onSaveRule}
-          isSaving={isSavingRule}
+          inquiry={inquiry}
+          canReassign={canReassign}
+          onSaveRule={onSaveRule}
+          isSavingRule={isSavingRule}
+          onRequestDeptChange={onRequestDeptChange}
+          isRequestingDeptChange={isRequestingDeptChange}
         />
       </div>
 
