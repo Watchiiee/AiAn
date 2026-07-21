@@ -111,6 +111,24 @@ def run(csv_paths: list[str]):
     print("\n해석: '정답등수 이후' 비율이 높으면 엘보우 컷이 정답을 안전하게 포함한다는 뜻.")
     print("      낮으면(정답 이전에 컷) 엘보우 방식이 오히려 정답을 잘라낼 위험이 있다는 뜻.")
 
+    # --- [신규] 실패 사례(엘보우가 정답보다 먼저 끊는 경우) 목록 + min_k 권장값 ---
+    failures = [(g, m) for g, m in gold_rank_vs_max_gap_rank if m < g]
+    print("\n" + "=" * 70)
+    print(f"실패 사례 (엘보우가 정답 등수 이전에 끊어버리는 경우): {len(failures)}개")
+    print("=" * 70)
+    if failures:
+        for r in csv_rows:
+            if r["gold_rank"] is not None and r["max_gap_after_rank"] is not None and r["max_gap_after_rank"] < r["gold_rank"]:
+                print(f"  [{r['id']}] 정답등수={r['gold_rank']}, 엘보우위치={r['max_gap_after_rank']} | {r['question'][:40]}")
+        fail_gold_ranks = [g for g, m in failures]
+        suggested_min_k = max(fail_gold_ranks)
+        print(f"\n실패 사례들의 정답등수: {sorted(fail_gold_ranks)}")
+        print(f"=> min_k를 {suggested_min_k}로 설정하면 이번 실패 사례 전부가 커버됨")
+        print(f"   (엘보우가 그보다 일찍 끊으려 해도 최소 {suggested_min_k}개까지는 무조건 보게 되므로)")
+    else:
+        print("  실패 사례 없음 — 지금 골든셋 기준으로는 엘보우가 정답을 자른 적이 없음.")
+        print("  (min_k를 도입할 근거가 약함 — 표본을 더 늘려 재확인 권장)")
+
     # --- CSV 저장 ---
     out_dir = "data/test_results"
     os.makedirs(out_dir, exist_ok=True)

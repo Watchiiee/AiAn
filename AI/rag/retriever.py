@@ -25,7 +25,7 @@ DEFAULT_DOMAIN = "admin"
 FUSION_POOL = 20
 RRF_K = 60
 
-# 비교실험용 스위치: RAG_USE_HYBRID=1로 실행하면 BM25+RRF 하이브리드를 사용.
+# 비교실험용 스위치 ①: RAG_USE_HYBRID=1로 실행하면 BM25+RRF 하이브리드를 사용.
 # 기본값은 0(벡터전용) — 89개 골든셋 실측 결과 하이브리드가 recall 97.2%→94.4%,
 # Precision@1 80.9%→73.0%로 전반적 순손실이었고, 하이브리드를 만든 원래 목적
 # (G05: IEEE Std 142)조차 벡터전용에서 이미 1위로 해결되고 있어 실익이 없었음
@@ -33,6 +33,20 @@ RRF_K = 60
 # 보다 우대하는 부작용이 넓게 발생한 것으로 진단됨 — 균등가중 RRF를 그대로 켜는
 # 것은 위험하므로 기본은 끔. 추후 신호강도 기반 임계값 등으로 개선 후 재검토.
 USE_HYBRID = os.environ.get("RAG_USE_HYBRID", "0") == "1"
+
+# 비교실험용 스위치 ②: RAG_DYNAMIC_TOPK=0으로 실행하면 고정 top_k(3)로 되돌아간다.
+# 기본값은 1(동적 사용) — 89개 골든셋 실측 결과(compare_production_topk.py) 고정3
+# 대비 recall 84.8%→97.2%, 회귀 0건으로 순이익이 확정되어 기본값으로 승격함
+# (DECISION_LOG Q절 참고). min_k=6은 매직넘버가 아니라, 엘보우가 정답을 잘라낸
+# 실패 사례 7건의 정답등수(4,5,5,5,5,6,6)를 전부 커버하도록 데이터로 산출한 값이다.
+# 하이브리드와의 조합은 아직 검증되지 않았으므로, 이 모드가 켜지면 하이브리드
+# 여부와 무관하게 벡터전용으로 동작한다(단계적 도입 원칙).
+DYNAMIC_TOPK = os.environ.get("RAG_DYNAMIC_TOPK", "1") == "1"
+DYNAMIC_MIN_K = int(os.environ.get("RAG_MIN_K", "6"))
+DYNAMIC_MAX_K = int(os.environ.get("RAG_MAX_K", "10"))
+
+print(f"[retriever.py 설정] USE_HYBRID={USE_HYBRID}, DYNAMIC_TOPK={DYNAMIC_TOPK}"
+      f"(min_k={DYNAMIC_MIN_K}, max_k={DYNAMIC_MAX_K})")
 
 _client = None
 _collections: dict[str, object] = {}
@@ -73,6 +87,28 @@ def retrieve(text: str, cls: Classification, top_k: int = 3) -> list[RetrievedDo
         return [_NOT_READY_DOC]
 
     query_vec = embed_text(text)
+
+    # --- 동적 top_k 경로 (RAG_DYNAMIC_TOPK=1일 때, top_k 파라미터는 무시하고
+    #     엘보우+min_k로 자체 결정. 하이브리드보다 우선 적용) ---
+    if DYNAMIC_TOPK:
+        res = collection.query(query_embeddings=[query_vec], n_results=DYNAMIC_MAX_K)
+        documents = res.get("documents", [[]])[0]
+        metadatas = res.get("metadatas", [[]])[0]
+        distances = res.get("distances", [[]])[0]
+        scores = [round(1.0 - float(d), 3) for d in distances]
+
+        if len(scores) <= 1:
+            final_k = len(scores)
+        else:
+            gaps = [scores[i] - scores[i + 1] for i in range(len(scores) - 1)]
+            elbow_pos = gaps.index(max(gaps)) + 1  # 1-indexed: "몇 등 뒤에서 최대격차인지"
+            final_k = max(elbow_pos, DYNAMIC_MIN_K)
+            final_k = min(final_k, len(scores))
+
+        docs: list[RetrievedDoc] = []
+        for doc, meta, score in list(zip(documents, metadatas, scores))[:final_k]:
+            docs.append(RetrievedDoc(content=doc, source=_source_label(meta), score=score, rrf_score=None))
+        return docs if docs else [_NOT_READY_DOC]
 
     # --- 벡터전용 경로 (RAG_USE_HYBRID=0일 때, 하이브리드 도입 전과 동일한 동작) ---
     if not USE_HYBRID:
