@@ -100,6 +100,33 @@ def update_rule(
     if department is not None:
         record.department = department
         record.department_certain = True
+        # master가 실제로 재배정했으니, staff가 남겨둔 변경요청은 해소된 것으로 처리
+        record.dept_change_requested = False
+        record.dept_change_reason = None
+        record.dept_change_suggested = None
+        record.dept_change_requested_by = None
+        record.dept_change_requested_at = None
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+def request_department_change(
+    db: Session, inquiry_id: int, reason: str, requested_by: str, suggested_department: str | None = None,
+) -> InquiryRecord | None:
+    """
+    staff가 "이 부서 아닌 것 같다"고 재배정을 요청. 실제 부서를 바꾸지는 않고
+    (그 권한은 master에게만 있음, update_rule 참고) 검토대기 큐에 표시만 남긴다.
+    이미 검토완료(reviewed=True)된 건은 요청을 받지 않는다 — 더 손댈 이유가 없다.
+    """
+    record = db.query(InquiryRecord).filter(InquiryRecord.id == inquiry_id).first()
+    if record is None or record.reviewed:
+        return None
+    record.dept_change_requested = True
+    record.dept_change_reason = reason
+    record.dept_change_suggested = suggested_department
+    record.dept_change_requested_by = requested_by
+    record.dept_change_requested_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(record)
     return record

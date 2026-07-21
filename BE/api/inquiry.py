@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from BE.core.schemas import (
     InquiryRequest, InquirySubmitResponse, InquiryStatusResponse, InquiryStatus,
-    ReviewRequest, PendingInquiryResponse, RuleUpdateRequest,
+    ReviewRequest, PendingInquiryResponse, RuleUpdateRequest, DeptChangeRequest,
 )
 from BE.api.pipeline import process_inquiry
 from BE.db.database import get_db
@@ -72,32 +72,37 @@ def get_my_inquiry(
     return _to_status_response(record)
 
 
+def _to_pending_response(r: InquiryRecord) -> PendingInquiryResponse:
+    return PendingInquiryResponse(
+        id=r.id,
+        created_at=r.created_at.isoformat(),
+        original_text=r.original_text,
+        inquiry_type=r.inquiry_type,
+        key_request=r.key_request,
+        confidence=r.confidence,
+        domain=r.domain,
+        category=r.category,
+        department=r.department,
+        department_certain=r.department_certain,
+        department_note=r.department_note,
+        urgent_reason=r.urgent_reason,
+        priority=r.priority,
+        answer_draft=r.answer_draft,
+        answer_confidence=r.answer_confidence,
+        retrieved=r.retrieved_docs or [],
+        used_llm=r.used_llm,
+        llm_error=r.llm_error,
+        dept_change_requested=r.dept_change_requested,
+        dept_change_reason=r.dept_change_reason,
+        dept_change_suggested=r.dept_change_suggested,
+        dept_change_requested_by=r.dept_change_requested_by,
+    )
+
+
 @router.get("/inquiry/pending", response_model=list[PendingInquiryResponse])
 def list_pending_inquiries(db: Session = Depends(get_db), user: dict = Depends(require_staff)):
     records = crud.get_pending_inquiries(db)
-    return [
-        PendingInquiryResponse(
-            id=r.id,
-            created_at=r.created_at.isoformat(),
-            original_text=r.original_text,
-            inquiry_type=r.inquiry_type,
-            key_request=r.key_request,
-            confidence=r.confidence,
-            domain=r.domain,
-            category=r.category,
-            department=r.department,
-            department_certain=r.department_certain,
-            department_note=r.department_note,
-            urgent_reason=r.urgent_reason,
-            priority=r.priority,
-            answer_draft=r.answer_draft,
-            answer_confidence=r.answer_confidence,
-            retrieved=r.retrieved_docs or [],
-            used_llm=r.used_llm,
-            llm_error=r.llm_error,
-        )
-        for r in records
-    ]
+    return [_to_pending_response(r) for r in records]
 
 
 @router.patch("/inquiry/{inquiry_id}/review", response_model=InquiryStatusResponse)
@@ -113,7 +118,33 @@ def review_inquiry(
     return _to_status_response(record)
 
 
-@router.patch("/inquiry/{inquiry_id}/rule", response_model=InquiryStatusResponse)
+@router.patch("/inquiry/{inquiry_id}/request-department-change", response_model=PendingInquiryResponse)
+def request_department_change(
+    inquiry_id: int,
+    req: DeptChangeRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_staff),
+):
+    """
+    staff가 "이 문의는 우리 부서 업무가 아닌 것 같다"고 재배정을 요청.
+    실제 재배정 권한은 master에게만 있으므로(PATCH /rule 참고), 이 엔드포인트는
+    부서를 직접 바꾸지 않고 검토대기 큐(GET /pending)에 요청 표시만 남긴다.
+    master가 큐에서 이 표시를 보고 PATCH /rule로 실제 재배정하면, 그 순간
+    이 요청 표시는 자동으로 해소(초기화)된다(crud.update_rule 참고).
+    """
+    record = crud.request_department_change(
+        db, inquiry_id, reason=req.reason, requested_by=user["email"],
+        suggested_department=req.suggested_department,
+    )
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="문의를 찾을 수 없거나, 이미 검토완료된 문의라 요청할 수 없습니다.",
+        )
+    return _to_pending_response(record)
+
+
+@router.patch("/inquiry/{inquiry_id}/rule", response_model=PendingInquiryResponse)
 def update_inquiry_rule(
     inquiry_id: int,
     req: RuleUpdateRequest,
@@ -123,4 +154,4 @@ def update_inquiry_rule(
     record = crud.update_rule(db, inquiry_id, priority=req.priority, department=req.department)
     if record is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="문의를 찾을 수 없습니다.")
-    return _to_status_response(record)
+    return _to_pending_response(record)

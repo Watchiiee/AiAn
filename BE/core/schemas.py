@@ -187,6 +187,20 @@ class PendingInquiryResponse(BaseModel):
     retrieved: list[RetrievedDoc] = []
     used_llm: bool
     llm_error: str | None = None
+    # staff가 "이 부서 아닌 것 같다"고 요청한 상태(master만 실제 재배정 가능하므로
+    # staff는 요청만 남기고 master가 검토대기 큐에서 이 값들을 보고 판단한다)
+    dept_change_requested: bool = False
+    dept_change_reason: str | None = None
+    dept_change_suggested: str | None = None
+    dept_change_requested_by: str | None = None
+
+
+class DeptChangeRequest(BaseModel):
+    """staff가 '이 문의는 우리 부서 업무가 아닌 것 같다'고 master에게 재배정을
+    요청할 때 쓰는 바디. 실제 재배정 권한은 master에게만 있으므로(RuleUpdateRequest
+    참고), 이 요청은 그 자체로 부서를 바꾸지 않고 검토대기 큐에 표시만 남긴다."""
+    reason: str = Field(..., min_length=1, description="왜 이 부서가 아니라고 생각하는지")
+    suggested_department: str | None = Field(None, description="대신 이 부서가 맞다고 생각하면(선택)")
 
 
 class RuleUpdateRequest(BaseModel):

@@ -39,6 +39,15 @@ class InquiryRecord(Base):
     reviewed_at = Column(DateTime, nullable=True)
     final_answer = Column(String, nullable=True)
 
+    # 부서 재배정은 master만 실행 가능(권한 체계상). staff는 "이거 우리 부서
+    # 아닌 것 같다"는 요청만 남기고, master가 검토대기 큐에서 이 요청을 보고
+    # 직접 재배정(/rule)하면 아래 필드들은 자동으로 초기화된다(crud.update_rule).
+    dept_change_requested = Column(Boolean, default=False)
+    dept_change_reason = Column(String, nullable=True)
+    dept_change_suggested = Column(String, nullable=True)  # staff가 제안하는 부서(선택)
+    dept_change_requested_by = Column(String, nullable=True)
+    dept_change_requested_at = Column(DateTime, nullable=True)
+
 
 class UserRole(str, enum.Enum):
     GENERAL = "general"
