@@ -35,11 +35,11 @@
 
 | 구분 | 사용 기술 |
 |---|---|
-| LLM | CLOVA Studio HCX-005 |
+| LLM | CLOVA Studio HCX-005 (기본, 전체 분류·생성) + Upstage Solar (hallucination_grade 검증 게이트, 선택적 이중검증 — 6.6절) |
 | 임베딩 | 로컬 `jhgan/ko-sroberta-multitask` (442MB, 한국어 특화) |
 | 벡터DB | ChromaDB (PersistentClient, 로컬 파일 기반) |
 | 키워드 검색 | `rank_bm25` (경량, 정규식 토큰화) — 현재 기본은 꺼둠(4번 참고) |
-| 관계형 DB | PostgreSQL (GCP Cloud SQL 배포 예정) |
+| 관계형 DB | PostgreSQL — Supabase(관리형) 사용. 코드는 표준 `DATABASE_URL` 연결문자열만 쓰므로 자체 운영 Postgres/Cloud SQL 등으로도 변경 없이 전환 가능 |
 | 파이프라인 오케스트레이션 | LangGraph (Adaptive RAG, 14개 노드) |
 | 인증 | JWT(bcrypt 직접 해싱) + 3단계 RBAC |
 | 관측/트레이싱 | Langfuse |
@@ -239,6 +239,29 @@ master가 검토대기 큐에서 그 표시를 보고 실제 조치(`PATCH /rule
 다 써도 통과하지 못하면, 답변을 숨기지 않고 **확신도(sufficient/partial/
 insufficient)를 낮춰 담당자에게 신호**를 줍니다.
 
+### 6.6 검증 게이트 이중화 — CLOVA + Upstage Solar
+
+파이프라인의 순차 검증 단계(doc_grade→hallucination_grade→answer_grade)가
+전부 같은 모델이면, 그 모델 고유의 편향·사각지대를 이중검증에서도 똑같이
+놓칠 수 있습니다("같은 사람이 자기 글을 두 번 검토하는" 구조적 한계). 이를
+보완하기 위해 `hallucination_grade` 하나만 별도 모델(Upstage Solar)로 전환할
+수 있게 만들었습니다(`HALLUCINATION_GRADER_PROVIDER` 환경변수, 기본값은
+CLOVA로 기존과 동일).
+
+이 과정에서 CLOVA와 정반대 방향의 흥미로운 버그를 발견했습니다 — CLOVA는
+"설명부터 쓰고 JSON을 나중에" 내놓는 경향이 있었는데, Solar는 반대로
+**"JSON을 먼저 내놓고 그 뒤에 친절하게 설명을 덧붙이는"** 경향이 있어, 둘 다
+순수 JSON 파싱을 깨뜨렸습니다. `classify_domain()`에서 검증된 정규식 구제
+패턴을 재사용해 해결했으며, `grade_answer`가 공유하는 헬퍼 함수에는 영향이
+가지 않도록 옵트인 파라미터로 분리했습니다.
+
+25개(A~E 5카테고리, 완전일치/수치왜곡/근거없는추가/무관한근거/부분일치)
+비교 테스트 결과 CLOVA와 Solar가 완전히 동일한 정확도를 보여, 이 테스트셋
+으로는 두 모델의 실질적 차이를 가려내지 못했습니다(왜곡 정도가 두 모델 다
+놓치기 어려울 만큼 뚜렷하게 설계된 탓으로 추정). 시간 관계상 더 미묘한
+테스트셋 반복 대신, 현재는 Solar를 유지한 채 실사용(Langfuse) 모니터링으로
+전환했습니다 — 상세 진행 과정은 `DECISION_LOG.md` X절 참고.
+
 ---
 
 ## 7. API 개요
@@ -282,8 +305,13 @@ GET    /health
 6. **비용보다 정확도 우선, 단 실측 후 결정** — 재시도·개별선별 등으로 LLM
    호출이 늘어나는 것은, 회귀 없이 정확도가 개선된다는 게 실측으로 확인된
    경우에만 감수했습니다.
+7. **같은 모델의 이중검증은 편향을 못 잡는다** — 순차 검증 단계가 전부 같은
+   모델이면 그 모델의 사각지대를 놓칠 수 있다는 우려로, 검증 게이트 하나를
+   별도 모델(Upstage Solar)로 시험 전환. 골든셋으로는 차이가 안 드러났지만,
+   "실측했는데 차이가 없었다"는 것도 유효한 결론으로 기록하고 다음(실사용
+   모니터링)으로 넘겼습니다 — 결론이 안 나온다고 검증을 생략하지 않습니다.
 
-전체 의사결정 과정과 실패·재현 사례는 `DECISION_LOG.md`에 A~W절로 상세히
+전체 의사결정 과정과 실패·재현 사례는 `DECISION_LOG.md`에 A~X절로 상세히
 기록되어 있습니다.
 
 ---
@@ -306,7 +334,7 @@ AiAn/
 │   ├── rules/rule_engine.py      # category→부서·우선순위 매핑
 │   └── db/                       # SQLAlchemy 모델·CRUD
 ├── AI/
-│   ├── llm.py                    # CLOVA 호출 래퍼
+│   ├── llm.py                    # CLOVA/Upstage 호출 래퍼 (provider 분기)
 │   ├── embedder.py                # 로컬 임베딩
 │   ├── prompts.py                 # 분류·생성·채점 프롬프트 전체
 │   ├── classifier/classifier.py
@@ -319,9 +347,10 @@ AiAn/
 ├── data/
 │   ├── knowledge_base/{admin,technical}/  # markdown 지식베이스 원본
 │   ├── vector_db/                          # ChromaDB 저장소
-│   └── golden_dataset_*.csv                # 골든셋 (phase1/phase2/bias_probe)
+│   ├── golden_dataset_*.csv                # 골든셋 (phase1/phase2/bias_probe)
+│   └── hallucination_test_set.csv          # CLOVA/Solar 이중검증 비교용 (25개)
 ├── scripts/                        # 평가·진단 스크립트 모음
-├── DECISION_LOG.md                 # 전체 의사결정 기록 (A~W절)
+├── DECISION_LOG.md                 # 전체 의사결정 기록 (A~X절)
 └── API_CHANGES_*.md                # 프론트 전달용 API 변경분
 ```
 
@@ -342,6 +371,8 @@ python3 -m uvicorn BE.main:app --reload --reload-dir AI --reload-dir BE --reload
 | `RAG_USE_HYBRID` | `0` | BM25+RRF 하이브리드 검색 (실측상 비권장) |
 | `RAG_DYNAMIC_TOPK` | `1` | 엘보우+min_k 동적 검색개수 |
 | `RAG_DOC_GRADE_MODE` | `individual` | 문서 개별선별 모드 |
+| `HALLUCINATION_GRADER_PROVIDER` | `clova` | hallucination_grade 전용 LLM 공급자(`clova`/`upstage`) |
+| `HALLUCINATION_GRADER_MODEL` | `HCX-005` | 위 provider가 `upstage`일 때 실제 Solar 모델명으로 설정 필요 |
 
 계정 승격(가입은 항상 general):
 ```sql
@@ -361,4 +392,7 @@ UPDATE users SET role='MASTER' WHERE email='...';
   재구성이 필요한 영역으로 별도 관리.
 - **법령 원문 미확보**: 현재 지식베이스는 Q&A 답변 속에 조문이 요약
   인용된 형태만 있고, 조문 전체 원문 컬렉션은 외부자료 확보 후 추가 예정.
+- **CLOVA/Solar 이중검증 결론 미확정**: 골든셋 25개로는 두 모델의 실질적
+  차이가 드러나지 않음. 더 미묘한 테스트셋 반복 대신, 실사용 중 Langfuse로
+  두 모델의 판단이 갈리는 사례를 관찰하며 판단할 예정.
 - **Docker화 / GCP 배포**: 진행 예정.
