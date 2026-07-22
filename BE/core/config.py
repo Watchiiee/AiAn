@@ -8,6 +8,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    # CORS 허용 origin — 쉼표로 구분해서 .env에 설정(예: 배포 시 실제 프론트
+    # 도메인/IP 추가). 기본값은 로컬 개발(Vite dev server, 5173/3000)만 허용
+    # — 이 값들이 있어야 로컬 개발이 그대로 동작하므로, 배포 주소는 여기에
+    # "추가"하는 형태로 쓸 것(덮어쓰지 말고 이어붙이기).
+    cors_allowed_origins: str = "http://localhost:5173,http://localhost:3000"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]
+
     # --- 현재 사용: CLOVA Studio (HyperCLOVA X) ---
     clova_api_key: str = ""
     classifier_model: str = "HCX-005"   # 분류

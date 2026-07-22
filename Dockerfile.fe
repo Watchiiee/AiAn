@@ -1,0 +1,36 @@
+# --- 1단계: 빌드 (Node) ---
+FROM node:20-slim AS build
+
+WORKDIR /app
+
+COPY FE/package.json FE/package-lock.json ./
+RUN npm ci
+
+COPY FE/ ./
+
+# [중요] Vite는 VITE_로 시작하는 값을 "빌드 시점"에 정적 JS 파일 안에 그대로
+# 박아넣는다 - 컨테이너 실행 시 -e로 넘겨도 반영 안 됨. 반드시 이 build-arg로
+# 넘겨야 한다. FE는 절대URL 방식(client.ts: `${BASE_URL}${path}`, 브라우저가
+# 직접 이 주소로 요청)이므로, 여기 넣는 값은 "브라우저가 실제로 접속 가능한
+# 백엔드 주소"여야 한다 — 컨테이너 내부 서비스명(예: http://backend:8000)은
+# 브라우저가 못 찾으므로 절대 넣지 말 것.
+#   - 로컬 docker-compose 테스트: http://localhost:8000 (포트매핑 되어 있으므로)
+#   - 실제 NCP 배포: 그 서버의 공개 IP 또는 도메인(예: http://1.2.3.4:8000)
+# 배포 주소가 바뀌면(IP->도메인 전환 등) 이 이미지를 반드시 다시 빌드해야 한다.
+ARG VITE_API_BASE
+ENV VITE_API_BASE=${VITE_API_BASE}
+
+RUN npm run build
+# 빌드 결과물은 보통 FE/dist/ 에 정적 html/js/css로 나옴(Vite 기본 설정 기준)
+
+# --- 2단계: 서빙 (nginx) ---
+FROM nginx:1.27-alpine
+
+# SPA 라우팅(react-router 등) 대응: 존재하지 않는 경로 요청도 index.html로
+# 돌려줘야 클라이언트 사이드 라우팅이 정상 동작함
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]

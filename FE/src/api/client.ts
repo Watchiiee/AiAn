@@ -6,13 +6,14 @@ import { getToken, clearSession, dispatchUnauthorized } from "../lib/authStorage
 const BASE_URL = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
 export class ApiError extends Error {
-  constructor(
-    message: string,
-    public status: number,
-    public detail?: string,
-  ) {
+  status: number;
+  detail?: string;
+
+  constructor(message: string, status: number, detail?: string) {
     super(message);
     this.name = "ApiError";
+    this.status = status;
+    this.detail = detail;
   }
 }
 

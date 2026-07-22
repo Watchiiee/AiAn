@@ -22,7 +22,7 @@ export default function StaffPage() {
   const [priorityFilter, setPriorityFilter] = useState("전체");
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [toast, setToast] = useState<string | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout>>();
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   function showToast(message: string) {
     setToast(message);
