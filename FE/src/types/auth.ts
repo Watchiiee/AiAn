@@ -25,6 +25,8 @@ export interface LoginResponse {
   access_token: string;
   token_type: "bearer";
   role: Role;
+  /** staff의 소속 부서. master 계정은 항상 null (전체 부서를 다 보는 계정) */
+  department: string | null;
 }
 
 /** 프론트에서 들고 다니는 로그인 세션 정보 (localStorage 저장 형태) */
@@ -32,4 +34,6 @@ export interface AuthSession {
   token: string;
   role: Role;
   email: string;
+  /** staff의 소속 부서. master는 null */
+  department: string | null;
 }

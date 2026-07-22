@@ -16,7 +16,7 @@ export default function LoginPage() {
   const mutation = useMutation({
     mutationFn: () => loginUser(email, password),
     onSuccess: (res) => {
-      login({ token: res.access_token, role: res.role, email });
+      login({ token: res.access_token, role: res.role, email, department: res.department });
       const fallback = homePathForRole(res.role);
       navigate(location.state?.from ?? fallback, { replace: true });
     },

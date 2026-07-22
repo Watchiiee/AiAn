@@ -36,6 +36,9 @@ export default function Header() {
                 : session.role === "staff"
                   ? "담당자"
                   : "일반 사용자"}
+              {session.role !== "general" && (
+                <> · {session.department ?? "전체 부서"}</>
+              )}
             </div>
           </div>
           <button
