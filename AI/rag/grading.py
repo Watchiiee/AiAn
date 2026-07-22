@@ -32,10 +32,23 @@ def _strip_code_fence(raw: str) -> str:
 def _safe_bool_call(
     system: str, user: str, key: str, default: bool,
     model: str | None = None, provider: str = "clova",
+    use_regex_fallback: bool = False,
 ) -> bool:
-    """grader 공통 호출부. 실패하면 default(보수적 값)로.
+    """
+    grader 공통 호출부. 실패하면 default(보수적 값)로.
     model이 None이면 기존 분류기 모델(CLOVA)을 그대로 쓴다 — 호출자가 명시적으로
-    바꾸지 않는 한 이전 동작과 동일."""
+    바꾸지 않는 한 이전 동작과 동일.
+
+    use_regex_fallback=True이면, 순수 JSON 파싱이 실패했을 때 응답 어디에 있든
+    "key": true/false 패턴을 정규식으로 한 번 더 찾아본다(classify_domain()에서
+    검증된 것과 같은 방어 패턴). CLOVA는 "설명부터 쓰고 JSON을 나중에" 쓰는
+    경향이 있었는데, Upstage Solar로 시험해보니 반대로 "JSON을 먼저 내놓고 그
+    뒤에 친절하게 이유를 덧붙이는" 경향이 있어(DECISION_LOG 참고) — 방향은
+    다르지만 결과는 같아서(전체 문자열이 순수 JSON이 아니게 됨) 같은 방식의
+    방어가 필요하다.
+    기본값은 False(기존 호출자는 이 파라미터를 안 넘기므로 전혀 영향 없음) —
+    hallucination_grade에서만 켜서 시험한다. grade_answer는 그대로 유지.
+    """
     model = model or settings.classifier_model
     try:
         raw = call_llm(model, system, user, max_tokens=64, provider=provider)
@@ -46,6 +59,10 @@ def _safe_bool_call(
     try:
         return bool(json.loads(_strip_code_fence(raw)).get(key, default))
     except (json.JSONDecodeError, ValueError, AttributeError):
+        if use_regex_fallback:
+            match = re.search(rf'"{re.escape(key)}"\s*:\s*(true|false)', raw, re.IGNORECASE)
+            if match:
+                return match.group(1).lower() == "true"
         return default
 
 
@@ -103,6 +120,7 @@ def grade_hallucination(answer: str, docs: list[RetrievedDoc]) -> bool:
     return _safe_bool_call(
         HALLUCINATION_GRADER_SYSTEM, user, "grounded", default=False,
         model=settings.hallucination_grader_model, provider=settings.hallucination_grader_provider,
+        use_regex_fallback=True,
     )
 
 
