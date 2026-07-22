@@ -15,6 +15,22 @@ class Settings(BaseSettings):
 
     use_stub_when_no_key: bool = True
 
+    # --- Upstage Solar (hallucination_grade 전용, 실험적) ---
+    # 목적: doc_grade(근거를 고르는 모델)와 hallucination_grade(그 근거로 만든
+    # 답을 검증하는 모델)가 같으면, 그 모델 고유의 편향을 이중검증 단계에서도
+    # 똑같이 놓칠 수 있다는 우려 때문에 검증 게이트만 별도 모델로 시험해본다.
+    # doc_grade/classify_domain은 이번 세션에 막 안정화됐으므로 손대지 않고
+    # 유지한다(DECISION_LOG 참고). 개선이 확인되면 answer_grade도 같은 방식으로
+    # 검토할 예정 — 한 번에 하나씩만 바꾸는 원칙.
+    # 기본값은 clova(기존 동작과 100% 동일). Solar로 바꾼 뒤에는 반드시 골든셋으로
+    # false negative/positive 비율을 CLOVA 단독과 비교하고 나서 기본값 전환을 판단할 것.
+    upstage_api_key: str = ""
+    hallucination_grader_provider: str = "clova"   # "clova" 또는 "upstage"
+    hallucination_grader_model: str = "HCX-005"     # upstage일 때는 실제 Solar
+                                                       # 모델명으로 .env에서 덮어쓸 것
+                                                       # (예: "solar-pro2" — Upstage
+                                                       # 콘솔에서 정확한 값 확인)
+
     # RAG 근거 판정: 검색 최고 score가 이 값 미만이면 '명백히 근거 없음'으로 보고
     # LLM을 부르지 않고 바로 insufficient 처리한다. (실측: 관련 0.6~0.7 / 무관 0.3)
     no_evidence_threshold: float = 0.4
@@ -39,3 +55,7 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+print(f"[config.py 설정] hallucination_grader_provider={settings.hallucination_grader_provider}, "
+      f"hallucination_grader_model={settings.hallucination_grader_model}, "
+      f"upstage_api_key_set={bool(settings.upstage_api_key.strip())}")

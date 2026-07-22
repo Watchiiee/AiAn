@@ -29,10 +29,16 @@ def _strip_code_fence(raw: str) -> str:
     return text.strip()
 
 
-def _safe_bool_call(system: str, user: str, key: str, default: bool) -> bool:
-    """grader 공통 호출부. 실패하면 default(보수적 값)로."""
+def _safe_bool_call(
+    system: str, user: str, key: str, default: bool,
+    model: str | None = None, provider: str = "clova",
+) -> bool:
+    """grader 공통 호출부. 실패하면 default(보수적 값)로.
+    model이 None이면 기존 분류기 모델(CLOVA)을 그대로 쓴다 — 호출자가 명시적으로
+    바꾸지 않는 한 이전 동작과 동일."""
+    model = model or settings.classifier_model
     try:
-        raw = call_llm(settings.classifier_model, system, user, max_tokens=64)
+        raw = call_llm(model, system, user, max_tokens=64, provider=provider)
     except LLMError:
         return default
     if raw is None:
@@ -82,10 +88,22 @@ def grade_documents_individual(question: str, docs: list[RetrievedDoc]) -> list[
 
 
 def grade_hallucination(answer: str, docs: list[RetrievedDoc]) -> bool:
-    """답변이 근거 문서에만 기반하는지. 판단 실패 시 보수적으로 False(재생성 유도)."""
+    """
+    답변이 근거 문서에만 기반하는지. 판단 실패 시 보수적으로 False(재생성 유도).
+
+    이 게이트만 별도로 provider를 지정할 수 있다(settings.hallucination_grader_*) —
+    doc_grade에서 "근거를 고른 모델"과 "그 근거로 만든 답을 검증하는 모델"이 같으면
+    같은 모델의 편향을 이중검증에서도 못 잡아낼 수 있다는 우려 때문에, 검증 단계만
+    별도 모델(예: Upstage Solar)로 시험해볼 수 있게 분리했다. 기본값은 CLOVA로
+    기존 동작과 동일(DECISION_LOG 참고 — doc_grade/classify_domain은 이번에 막
+    안정화됐으므로 손대지 않고, hallucination_grade에서만 먼저 검증한다).
+    """
     docs_text = "\n".join(f"- {d.content}" for d in docs)
     user = f"[근거 문서]\n{docs_text}\n\n[생성된 답변]\n{answer}"
-    return _safe_bool_call(HALLUCINATION_GRADER_SYSTEM, user, "grounded", default=False)
+    return _safe_bool_call(
+        HALLUCINATION_GRADER_SYSTEM, user, "grounded", default=False,
+        model=settings.hallucination_grader_model, provider=settings.hallucination_grader_provider,
+    )
 
 
 def grade_answer(question: str, answer: str) -> bool:
