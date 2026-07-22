@@ -134,6 +134,7 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     role: UserRoleSchema
+    department: str | None = None  # staff 계정에만 값이 있음. master는 전체 부서를 보므로 None.
 
 
 class UserResponse(BaseModel):

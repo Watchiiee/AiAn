@@ -101,7 +101,19 @@ def _to_pending_response(r: InquiryRecord) -> PendingInquiryResponse:
 
 @router.get("/inquiry/pending", response_model=list[PendingInquiryResponse])
 def list_pending_inquiries(db: Session = Depends(get_db), user: dict = Depends(require_staff)):
-    records = crud.get_pending_inquiries(db)
+    """
+    master는 전체 부서 큐를 본다(재배정 판단을 위해 필요). 일반 staff는 자기
+    부서로 배정된 것만 본다. staff인데 department가 아직 지정 안 됐으면
+    (운영자가 SQL로 role만 올리고 department는 안 지정한 경우) 아무 부서
+    문의도 잘못 보여주지 않도록 안전하게 빈 목록을 반환한다.
+    """
+    if user.get("role") == "master":
+        records = crud.get_pending_inquiries(db)
+    else:
+        dept = user.get("department")
+        if not dept:
+            return []
+        records = crud.get_pending_inquiries(db, department=dept)
     return [_to_pending_response(r) for r in records]
 
 

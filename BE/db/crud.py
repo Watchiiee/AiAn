@@ -53,10 +53,17 @@ def get_user_inquiry_by_id(db: Session, inquiry_id: int, user_id: int) -> Inquir
     )
 
 
-def get_pending_inquiries(db: Session) -> list[InquiryRecord]:
+def get_pending_inquiries(db: Session, department: str | None = None) -> list[InquiryRecord]:
     """
     검토 대기 큐. priority='긴급'인 건을 최상단에 고정하고, 그 안에서는(그리고
     나머지 안에서도) 오래 기다린 순으로 정렬한다.
+
+    department가 주어지면 그 부서로 배정된 문의만 반환한다(일반 staff용 —
+    "우리 부서 것만 보인다"는 당연한 기대를 충족하기 위함). None이면 필터
+    없이 전체를 반환한다(master용 — 전체 부서를 다 봐야 재배정 판단이 가능).
+
+    [설계 변경] 과거엔 이 필터가 없어서 모든 staff 계정이 부서와 무관하게
+    전체 큐를 봤음(실사용 중 발견된 버그, DECISION_LOG 참고).
 
     [설계 변경] 과거엔 긴급 민원이 RAG를 건너뛰고 별도 안내문만 담긴 채 바로
     들어왔는데, 이제는 긴급 여부와 무관하게 모든 문의가 RAG를 통과해 초안이
@@ -65,12 +72,10 @@ def get_pending_inquiries(db: Session) -> list[InquiryRecord]:
     담당한다.
     """
     urgent_first = case((InquiryRecord.priority == "긴급", 0), else_=1)
-    return (
-        db.query(InquiryRecord)
-        .filter(InquiryRecord.reviewed == False)  # noqa: E712
-        .order_by(urgent_first, InquiryRecord.created_at.asc())
-        .all()
-    )
+    query = db.query(InquiryRecord).filter(InquiryRecord.reviewed == False)  # noqa: E712
+    if department is not None:
+        query = query.filter(InquiryRecord.department == department)
+    return query.order_by(urgent_first, InquiryRecord.created_at.asc()).all()
 
 
 def mark_reviewed(

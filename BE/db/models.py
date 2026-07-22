@@ -62,4 +62,9 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
     role = Column(Enum(UserRole), default=UserRole.GENERAL, nullable=False)
+    # staff 계정에만 의미 있음(role/부서 승격과 같은 방식으로 운영자가 SQL로
+    # 직접 지정: UPDATE users SET department='연구원' WHERE email='...').
+    # master는 전체 부서를 다 봐야 하므로 NULL로 둔다(필터링 예외 처리는
+    # BE/api/inquiry.py의 list_pending_inquiries에서 role 기준으로 분기).
+    department = Column(String, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
