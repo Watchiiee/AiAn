@@ -28,3 +28,5 @@ app.include_router(auth_router)
 @app.get("/health")
 def health():
     return {"status": "ok", "llm_connected": settings.has_api_key}
+
+#
