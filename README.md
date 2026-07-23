@@ -45,6 +45,7 @@
 | 관측/트레이싱 | Langfuse |
 | 백엔드 | FastAPI |
 | Python | 3.12 |
+| 배포 | 네이버클라우드(NCP) — VPC/Subnet, Load Balancer, Auto Scaling Group, NAT Gateway (11절) |
 
 ---
 
@@ -382,7 +383,119 @@ UPDATE users SET role='MASTER' WHERE email='...';
 
 ---
 
-## 11. 알려진 한계 / 다음 단계
+## 11. 배포 아키텍처 (NCP)
+
+3-tier 구조로 배포했습니다 — 표현(프론트엔드) / 애플리케이션(백엔드,
+로드밸런서+Auto Scaling) / 데이터(Supabase) 계층이 독립적으로 분리되어
+있고, **프론트엔드가 데이터 계층에 직접 접근하는 경로는 없습니다**(항상
+백엔드를 거침).
+
+### 11.1 전체 구조
+
+```
+                    [인터넷]
+                       │
+              ┌────────┴────────┐
+              ▼                 ▼
+      [프론트엔드, Public]   [Load Balancer, Public]
+      (nginx, 정적 SPA)          │
+                        [Target Group / Health Check: GET /health]
+                                  │
+                    ┌─────────────┴─────────────┐
+                    ▼                           ▼
+         [백엔드 서버 (Private)] ...  [Auto Scaling Group이 관리]
+         (min=1, desired=2, max=4)
+                    │
+                    ▼
+              [NAT Gateway] ──→ 인터넷 ──→ [Supabase / CLOVA / Upstage]
+
+[Bastion, Public] ── SSH 전용 중계 ──→ 백엔드 서버들(Private, 공인IP 없음)
+```
+
+- **표현 계층**: 프론트엔드(Vite+React, `npm run build` 정적 산출물을 nginx로
+  서빙) — Public 서브넷, 공인IP 보유
+- **애플리케이션 계층**: 백엔드(FastAPI) — **Private 서브넷**(공인IP 없음),
+  Load Balancer를 통해서만 트래픽을 받음. Auto Scaling Group으로 관리되어
+  Target Group에 자동 등록/해제됨
+- **데이터 계층**: Supabase(관리형 Postgres, 외부) — 백엔드만 접근, 외부에서
+  직접 노출되지 않음
+
+### 11.2 네트워크 구성
+
+VPC 하나(`aian`, `10.100.0.0/16`) 아래 용도별로 서브넷을 분리했습니다:
+
+| 서브넷 | 용도 | Public/Private |
+|---|---|---|
+| `aian-sub` | 프론트엔드, Bastion | Public |
+| `aian-private-sub` | 백엔드(Auto Scaling Group) | Private |
+| `aian-natgw-sub` | NAT Gateway 전용 | Public |
+| `aian-lb-sub` | Load Balancer 전용 | Public |
+
+NCP는 NAT Gateway·Load Balancer가 **각각 전용 서브넷**을 요구합니다(일반
+서버와 같은 서브넷에 두면 동작하지 않음) — 처음엔 이걸 몰라 서브넷을
+2개(Public/Private)로만 설계했다가, 실제로는 4개가 필요하다는 것을 진행
+중에 발견해 추가했습니다.
+
+### 11.3 백엔드가 Private인데 외부 API를 호출해야 하는 문제 — NAT Gateway
+
+백엔드는 Supabase·CLOVA Studio·Upstage Solar 등 **NCP 외부의 서비스를 반드시
+호출**해야 합니다. Private 서브넷은 기본적으로 외부와의 아웃바운드 연결도
+막혀 있어, 이대로면 백엔드가 뜨긴 해도 DB 연결부터 실패합니다. **NAT
+Gateway + 라우팅 테이블(`0.0.0.0/0 → NATGW`)**을 추가해 "들어오는 연결은
+차단되지만 나가는 연결은 허용"되는 구조를 만들었습니다.
+
+### 11.4 관리 접속 — Bastion
+
+백엔드가 전부 Private(공인IP 없음)라 SSH로 직접 들어갈 방법이 없습니다.
+**Bastion**(Public 서브넷의 최소 스펙 서버, SSH 전용)을 하나 두고,
+`ssh -A`(에이전트 포워딩)로 Bastion을 거쳐 내부 서버로 점프하는 방식으로
+관리합니다. 백엔드 서버들의 ACG는 "Bastion의 사설IP에서 오는 22번만 허용"
+으로 좁혀, 이 경로 외에는 SSH 자체가 원천적으로 막혀 있습니다.
+
+### 11.5 Auto Scaling Group
+
+검증이 끝난 백엔드 서버(이미지)를 Launch Configuration으로 등록하고, 기존
+Load Balancer의 Target Group에 그대로 연결했습니다 — ASG가 서버를 만들면
+자동으로 Target Group에 등록되고 Health Check를 통과하면 트래픽을 받기
+시작합니다. 헬스 체크 유형은 "서버"(단순 생사 확인)가 아니라 "로드밸런서"
+(`GET /health` 실제 응답 확인)로 설정했습니다 — 서버는 켜져 있지만 컨테이너가
+죽은 상태(11.6절)를 "서버" 기준 헬스체크는 정상으로 오판하기 때문입니다.
+
+```
+최소 용량: 1   기대 용량: 2   최대 용량: 4
+```
+
+### 11.6 실제로 겪은 트러블슈팅
+
+- **컨테이너가 재부팅 후 자동으로 안 뜸(`TCP CLOSE`)**: 서버 이미지를 복제해
+  새 인스턴스를 띄우면, OS는 재부팅되지만 Docker Compose가 관리하던 컨테이너는
+  자동으로 다시 켜지지 않아 Load Balancer Health Check가 계속 실패했습니다.
+  `docker-compose.yml`의 backend 서비스에 `restart: unless-stopped`를 추가해
+  해결 — 이 정책이 반영된 이미지로만 이후의 모든 인스턴스(backend-1/2, ASG가
+  만드는 서버)를 통일했습니다.
+- **NAT Gateway 리소스를 정리하다 실수로 삭제**: 위 정책을 적용하기 전
+  진단 과정에서 NAT Gateway를 지웠는데, 이후 Private 백엔드가 다시
+  `Connection timed out`(Supabase 연결 실패)으로 죽는 사고가 있었음.
+  `curl --max-time 10 https://api.upstage.ai`로 "아웃바운드 자체가 안
+  되는지"부터 확인해 원인을 좁히고 재생성으로 해결 — 이 경험으로 "인프라
+  리소스를 정리(cleanup)할 때는 의존관계를 먼저 확인한다"는 절차를 다시
+  확인했습니다.
+- **Vite 빌드타임 환경변수**: 프론트엔드의 `VITE_API_BASE`(백엔드 절대
+  URL)는 런타임이 아니라 **`npm run build` 시점에 정적 JS에 그대로 박힘**
+  — 배포 주소(로드밸런서 IP)가 정해지기 전까지는 프론트엔드 이미지를 완성할
+  수 없고, 그 주소가 바뀌면 이미지를 반드시 재빌드해야 합니다.
+- **CORS를 환경변수로 분리**: 기존엔 로컬 개발 포트(5173/3000)로 하드코딩
+  되어 있던 `allow_origins`를 `CORS_ALLOWED_ORIGINS` 환경변수로 바꿔, 배포
+  주소를 코드 수정 없이 추가할 수 있게 함.
+- **`tsc -b`가 프로덕션 빌드에서 처음 잡아낸 타입 에러**: `npm run dev`(Vite
+  개발서버)는 타입체크를 하지 않아 로컬 개발 중엔 드러나지 않던 에러
+  (`erasableSyntaxOnly` 위반, `useRef` 초기값 누락)가 `npm run build`(정식
+  타입체크 포함)에서 처음 발견됨 — 프로덕션 빌드를 실제로 시도해봐야만
+  드러나는 문제였음.
+
+---
+
+## 12. 알려진 한계 / 다음 단계
 
 - **복합질문(하나의 문의에 여러 주제)**: 정답청크가 2개인 질문 중 일부는
   하나만 찾는 경우가 있음. 질문 분해(decompose_query) 기능을 구현해봤으나
@@ -395,4 +508,9 @@ UPDATE users SET role='MASTER' WHERE email='...';
 - **CLOVA/Solar 이중검증 결론 미확정**: 골든셋 25개로는 두 모델의 실질적
   차이가 드러나지 않음. 더 미묘한 테스트셋 반복 대신, 실사용 중 Langfuse로
   두 모델의 판단이 갈리는 사례를 관찰하며 판단할 예정.
-- **Docker화 / GCP 배포**: 진행 예정.
+- **CI/CD 미구축**: 현재는 서버마다 SSH로 접속해 `git pull` + `docker
+  compose up --build`를 수동으로 반복. GitHub Actions로 빌드·배포를
+  자동화하는 것이 다음 과제.
+- **Auto Scaling 정책 미설정**: 현재 min/desired/max만 고정값으로 설정되어
+  있고, CPU 사용률 등 지표 기반 정책(정책 설정)이나 시간대 기반 조정(일정
+  설정)은 아직 붙이지 않음.
