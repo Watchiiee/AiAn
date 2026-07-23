@@ -14,6 +14,10 @@ services:
       - .env
     ports:
       - "8000:8000"
+    # 서버 재부팅 시(이미지 복제 등) 컨테이너가 자동으로 다시 뜨게 함 —
+    # Private 서브넷 백엔드에서 재부팅 후 컨테이너가 안 떠서 로드밸런서
+    # Health Check가 TCP CLOSE로 실패했던 문제를 겪은 뒤 추가함.
+    restart: unless-stopped
     # .env의 CORS_ALLOWED_ORIGINS에 아래 frontend 접속 주소(http://localhost)가
     # 포함되어 있어야 브라우저 요청이 CORS에 안 걸림. 기본값(5173/3000)에는
     # 없으므로 .env에 추가 필요:
