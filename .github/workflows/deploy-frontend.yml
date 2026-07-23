@@ -1,0 +1,28 @@
+name: Deploy Frontend
+
+# FE 코드나 nginx/도커 관련 파일이 바뀔 때만 실행
+on:
+  push:
+    branches: [main]
+    paths:
+      - "FE/**"
+      - "Dockerfile.fe"
+      - "nginx.conf"
+      - "docker-compose.yml"
+
+jobs:
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH into frontend server and redeploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.FRONTEND_HOST }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # frontend는 Public 서브넷이라 Bastion 없이 직접 접속 가능
+          command_timeout: 15m
+          script: |
+            cd ~/AiAn
+            git pull
+            docker compose up --build -d --no-deps frontend
