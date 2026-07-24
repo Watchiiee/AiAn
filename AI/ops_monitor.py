@@ -93,13 +93,17 @@ def _classify_pattern(category_retry_count: dict, category_totals: dict, retry_r
     )
 
     if widespread:
+        label = "⚠️ 광범위한 문제"
         verdict = "광범위한 문제 - 대부분의 카테고리에서 비슷하게 재시도가 발생함"
     elif concentrated:
-        verdict = f"특정 카테고리 국한 문제 - {', '.join(concentrated)}에서만 재시도가 몰림(각 {_MIN_RETRY_COUNT_FOR_PATTERN}건 이상)"
+        cats_str = "·".join(concentrated)
+        label = f"⚠️ {cats_str} 국한 문제"
+        verdict = f"특정 카테고리 국한 문제 - {cats_str}에서만 재시도가 몰림(각 {_MIN_RETRY_COUNT_FOR_PATTERN}건 이상)"
     else:
+        label = "✅ 특이사항 없음"
         verdict = "특이사항 없음 - 재시도가 있더라도 카테고리당 건수가 적어(각 2건 이하) 패턴으로 보기엔 근거 부족"
 
-    return {"verdict": verdict, "widespread": widespread, "concentrated_categories": concentrated}
+    return {"verdict": verdict, "label": label, "widespread": widespread, "concentrated_categories": concentrated}
 
 
 def aggregate_stats(traces: list[dict]) -> dict:
@@ -175,7 +179,8 @@ def aggregate_stats(traces: list[dict]) -> dict:
             cat: round(category_retries[cat] / category_totals[cat], 3)
             for cat in category_totals
         },
-        "pattern_verdict": pattern["verdict"],  # 코드가 이미 결정론적으로 내린 판정
+        "pattern_verdict": pattern["verdict"],  # 코드가 이미 결정론적으로 내린 판정(긴 설명, LLM 프롬프트용)
+        "pattern_label": pattern["label"],      # 짧은 라벨(이메일 제목 등에 그대로 쓰기 좋음)
         "hallucination_fail_rate": hallucination_fail / n,
         "answer_fail_rate": answer_fail / n,
         "flagged_examples": flagged[:15],  # 리포트가 너무 길어지지 않게 상한

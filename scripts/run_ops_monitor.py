@@ -29,7 +29,7 @@ def run():
     report = generate_ops_report(stats)
 
     date_str = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
-    subject = f"[AiAn Ops 리포트] {date_str} - {stats['pattern_verdict'][:30]}"
+    subject = f"[AiAn Ops 리포트] {date_str} {stats['pattern_label']}"
 
     print("\n" + "=" * 70)
     print(subject)
