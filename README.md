@@ -263,6 +263,29 @@ CLOVA로 기존과 동일).
 테스트셋 반복 대신, 현재는 Solar를 유지한 채 실사용(Langfuse) 모니터링으로
 전환했습니다 — 상세 진행 과정은 `DECISION_LOG.md` X절 참고.
 
+### 6.7 담당자 코파일럿 (사이드바 대화형 도우미)
+
+담당자가 검토 화면에서 "왜 이 문서를 선택했어?", "확신도가 왜 이렇게
+나왔어?" 같은 질문을 실시간으로 물어볼 수 있는 기능입니다. `selected`
+필드(6.2절)를 API로 노출만 하고 끝났던 것을, 담당자가 실제로 활용할 수
+있는 형태로 완성한 것입니다.
+
+**v1 범위를 의도적으로 좁혔습니다**: 이미 저장된 데이터(원본문의·분류·검색된
+문서·선택여부·생성답변)를 설명하는 것만 지원하고, "비슷한 사례 찾아줘"처럼
+새로운 검색이 필요한 질문은 정해진 문구로 정직하게 거절하도록 프롬프트에
+명시했습니다 — 근거 없이 답을 지어내는 것을 막기 위한 안전장치입니다.
+
+**응답은 SSE(Server-Sent Events)로 스트리밍**됩니다. 이 과정에서 CLOVA
+Studio의 실제 스트리밍 형식(`event:token`으로 조각이 오고, 스트림 종료 시
+`event:result`로 전체 답변을 한 번 더 통째로 재전송하는 구조)을 실측으로
+처음 확인했고, 이를 무시하면 답변이 중복으로 붙는 문제가 있어 이벤트
+종류별로 분기 처리했습니다.
+
+배선 전 10개 질문(정상범위 6개+범위이탈 4개)을 5회씩 반복 검증해, 응답
+안정성과 "컨텍스트에 없는 문서번호를 지어내지 않는지"(1차 시도에서 실제로
+발견된 문제)를 확인한 뒤 반영했습니다 — 상세 과정은 `DECISION_LOG.md` Y절
+참고.
+
 ---
 
 ## 7. API 개요
@@ -279,6 +302,7 @@ GET    /api/inquiry/pending                       검토 대기 큐 (staff: 자�
 PATCH  /api/inquiry/{id}/review                   검토·승인 (staff+)
 PATCH  /api/inquiry/{id}/request-department-change  부서변경 요청 (staff+)
 PATCH  /api/inquiry/{id}/rule                     부서/우선순위 실제 재배정 (master만)
+POST   /api/inquiry/{id}/copilot                  담당자 코파일럿 (SSE 스트리밍, staff+, 자기부서만)
 
 GET    /health
 ```
@@ -312,7 +336,7 @@ GET    /health
    "실측했는데 차이가 없었다"는 것도 유효한 결론으로 기록하고 다음(실사용
    모니터링)으로 넘겼습니다 — 결론이 안 나온다고 검증을 생략하지 않습니다.
 
-전체 의사결정 과정과 실패·재현 사례는 `DECISION_LOG.md`에 A~X절로 상세히
+전체 의사결정 과정과 실패·재현 사례는 `DECISION_LOG.md`에 A~Y절로 상세히
 기록되어 있습니다.
 
 ---
@@ -335,9 +359,10 @@ AiAn/
 │   ├── rules/rule_engine.py      # category→부서·우선순위 매핑
 │   └── db/                       # SQLAlchemy 모델·CRUD
 ├── AI/
-│   ├── llm.py                    # CLOVA/Upstage 호출 래퍼 (provider 분기)
+│   ├── llm.py                    # CLOVA/Upstage 호출 래퍼 (provider 분기, 스트리밍 포함)
 │   ├── embedder.py                # 로컬 임베딩
-│   ├── prompts.py                 # 분류·생성·채점 프롬프트 전체
+│   ├── prompts.py                 # 분류·생성·채점·코파일럿 프롬프트 전체
+│   ├── copilot.py                 # 담당자 코파일럿 컨텍스트 조합
 │   ├── classifier/classifier.py
 │   └── rag/
 │       ├── ingest.py               # 지식베이스 → 벡터DB
@@ -351,7 +376,7 @@ AiAn/
 │   ├── golden_dataset_*.csv                # 골든셋 (phase1/phase2/bias_probe)
 │   └── hallucination_test_set.csv          # CLOVA/Solar 이중검증 비교용 (25개)
 ├── scripts/                        # 평가·진단 스크립트 모음
-├── DECISION_LOG.md                 # 전체 의사결정 기록 (A~X절)
+├── DECISION_LOG.md                 # 전체 의사결정 기록 (A~Y절)
 └── API_CHANGES_*.md                # 프론트 전달용 API 변경분
 ```
 
