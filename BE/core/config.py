@@ -63,6 +63,18 @@ class Settings(BaseSettings):
     langfuse_secret_key: str = ""
     langfuse_host: str = "https://cloud.langfuse.com"
 
+    # --- Ops 모니터링 리포트 이메일 발송 (SMTP) ---
+    # 새 이메일 서비스 연동을 추가하지 않고, 표준 SMTP(Gmail 앱비밀번호 등으로
+    # 바로 가능)로 간단하게 처리한다. 이 값들이 없으면 발송을 건너뛰고 콘솔에
+    # 리포트만 출력(scripts/run_ops_monitor.py 참고) - 이메일 설정이 안 됐다고
+    # 리포트 생성 자체가 실패하면 안 되므로.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    ops_report_recipient: str = ""
+
     @property
     def has_api_key(self) -> bool:
         return bool(self.clova_api_key.strip())

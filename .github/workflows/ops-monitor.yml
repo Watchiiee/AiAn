@@ -1,0 +1,40 @@
+name: Ops Monitor Daily Report
+
+# 매일 한국시간 오전 8시(UTC 전날 23:00)에 실행. 이 배치는 우리 서버에
+# SSH로 붙지 않는다 - Langfuse/CLOVA/SMTP 모두 GitHub 러너에서 바로
+# 네트워크로 접속 가능하므로, deploy-backend.yml에서 겪었던 SSH 키 인증
+# 문제 자체가 없다.
+on:
+  schedule:
+    - cron: "0 23 * * *"
+  workflow_dispatch: {}  # 콘솔에서 수동으로도 즉시 실행해볼 수 있게
+
+jobs:
+  ops-monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run ops monitor
+        env:
+          CLOVA_API_KEY: ${{ secrets.CLOVA_API_KEY }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_HOST: ${{ secrets.LANGFUSE_HOST }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          OPS_REPORT_RECIPIENT: ${{ secrets.OPS_REPORT_RECIPIENT }}
+          # DATABASE_URL은 이 스크립트가 DB를 안 쓰지만, BE.core.config가
+          # import 시점에 필요로 하므로 형식만 맞는 값을 넣어둔다.
+          DATABASE_URL: "sqlite:///:memory:"
+        run: python3 -m scripts.run_ops_monitor

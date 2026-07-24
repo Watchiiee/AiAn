@@ -9,6 +9,8 @@ regenerate_count, answer_confidence, route 등)를 그대로 활용한다.
 보여주는 것이 원칙(analyze_score_distribution.py 등에서 지켜온 방식과 동일).
 """
 import requests
+import smtplib
+from email.mime.text import MIMEText
 from datetime import datetime, timedelta, timezone
 from collections import Counter
 from typing import Any
@@ -224,3 +226,25 @@ def generate_ops_report(stats: dict) -> str:
     except LLMError as e:
         return f"[리포트 생성 실패: {e}]\n\n집계 데이터는 다음과 같습니다:\n{prompt}"
     return report or "[리포트 생성 실패: 빈 응답]"
+
+
+def send_email_report(subject: str, body: str) -> bool:
+    """
+    SMTP로 리포트를 발송한다. 발송 설정(smtp_host 등)이 비어있으면 조용히
+    False를 반환하고 발송을 건너뛴다 - 이메일 설정 미비가 리포트 생성 자체를
+    실패시키면 안 되므로(run_ops_monitor.py가 이 경우 콘솔 출력으로 대체함).
+    """
+    if not settings.smtp_host or not settings.ops_report_recipient:
+        return False
+
+    msg = MIMEText(body, _charset="utf-8")
+    msg["Subject"] = subject
+    msg["From"] = settings.smtp_from or settings.smtp_username
+    msg["To"] = settings.ops_report_recipient
+
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+        server.starttls()
+        if settings.smtp_username:
+            server.login(settings.smtp_username, settings.smtp_password)
+        server.send_message(msg)
+    return True
