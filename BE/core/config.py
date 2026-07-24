@@ -37,9 +37,13 @@ class Settings(BaseSettings):
     upstage_api_key: str = ""
     hallucination_grader_provider: str = "clova"   # "clova" 또는 "upstage"
     hallucination_grader_model: str = "HCX-005"     # upstage일 때는 실제 Solar
-                                                       # 모델명으로 .env에서 덮어쓸 것
-                                                       # (예: "solar-pro2" — Upstage
-                                                       # 콘솔에서 정확한 값 확인)
+
+    # --- 담당자 코파일럿(StaffPage 사이드바 대화형 도우미) ---
+    # 스트리밍(call_llm_stream)이 CLOVA 실측(scripts/debug_clova_stream.py)으로
+    # event:token/result/signal 구조까지 검증됐으므로 기본값은 clova.
+    # hallucination_grader와 같은 패턴 - 다른 provider로 시험 전환 가능.
+    copilot_provider: str = "clova"
+    copilot_model: str = "HCX-005"
 
     # RAG 근거 판정: 검색 최고 score가 이 값 미만이면 '명백히 근거 없음'으로 보고
     # LLM을 부르지 않고 바로 insufficient 처리한다. (실측: 관련 0.6~0.7 / 무관 0.3)
@@ -68,4 +72,5 @@ settings = Settings()
 
 print(f"[config.py 설정] hallucination_grader_provider={settings.hallucination_grader_provider}, "
       f"hallucination_grader_model={settings.hallucination_grader_model}, "
+      f"copilot_provider={settings.copilot_provider}, copilot_model={settings.copilot_model}, "
       f"upstage_api_key_set={bool(settings.upstage_api_key.strip())}")

@@ -213,6 +213,14 @@ class DeptChangeRequest(BaseModel):
     suggested_department: str | None = Field(None, description="대신 이 부서가 맞다고 생각하면(선택)")
 
 
+class CopilotRequest(BaseModel):
+    """담당자 코파일럿(사이드바 대화형 도우미) 질문 바디.
+    v1 범위: 이미 저장된 데이터(원본문의·분류·검색문서·선택여부·생성답변)를
+    설명하는 것으로 한정 — 새 검색이 필요한 질문은 COPILOT_SYSTEM 프롬프트가
+    정해진 문구로 거절하도록 파일럿 검증됨(scripts/debug_copilot_pilot.py)."""
+    question: str = Field(..., min_length=1)
+
+
 class RuleUpdateRequest(BaseModel):
     """담당자의 AI 분류가 틀렸을 때 최고관리자가 부서/우선순위를 재배정."""
     priority: str | None = None

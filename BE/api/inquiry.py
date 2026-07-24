@@ -2,17 +2,24 @@
 문의 처리 라우터.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+import json
 
 from BE.core.schemas import (
     InquiryRequest, InquirySubmitResponse, InquiryStatusResponse, InquiryStatus,
     ReviewRequest, PendingInquiryResponse, RuleUpdateRequest, DeptChangeRequest,
+    CopilotRequest,
 )
 from BE.api.pipeline import process_inquiry
 from BE.db.database import get_db
 from BE.db.models import InquiryRecord
 from BE.db import crud
 from BE.core.deps import get_current_user, require_staff, require_master
+from BE.core.config import settings
+from AI.llm import call_llm_stream, LLMError
+from AI.prompts import COPILOT_SYSTEM
+from AI.copilot import build_copilot_prompt
 
 router = APIRouter(prefix="/api", tags=["inquiry"])
 
@@ -167,3 +174,46 @@ def update_inquiry_rule(
     if record is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="문의를 찾을 수 없습니다.")
     return _to_pending_response(record)
+
+
+def _copilot_stream(question: str, record: InquiryRecord):
+    """SSE 청크 제너레이터. 각 텍스트 조각을 JSON으로 감싸서 한 줄(data: ...\n\n)로
+    보낸다 - content 안에 개행이 있으면 SSE 프레이밍이 깨지므로 raw 텍스트를
+    그대로 내보내지 않고 반드시 json.dumps로 한 줄 처리."""
+    user_prompt = build_copilot_prompt(record, question)
+    try:
+        for delta in call_llm_stream(
+            settings.copilot_model, COPILOT_SYSTEM, user_prompt,
+            max_tokens=600, provider=settings.copilot_provider,
+        ):
+            yield f"data: {json.dumps({'delta': delta}, ensure_ascii=False)}\n\n"
+    except LLMError as e:
+        yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+    yield "data: [DONE]\n\n"
+
+
+@router.post("/inquiry/{inquiry_id}/copilot")
+def inquiry_copilot(
+    inquiry_id: int,
+    req: CopilotRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_staff),
+):
+    """
+    담당자 코파일럿(사이드바 대화형 도우미). SSE로 답변을 스트리밍한다.
+    master가 아닌 일반 staff는 자기 부서로 배정된 문의에만 접근 가능
+    (list_pending_inquiries와 동일한 부서필터링 원칙, W절 버그 재발 방지).
+    """
+    record = db.query(InquiryRecord).filter(InquiryRecord.id == inquiry_id).first()
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="문의를 찾을 수 없습니다.")
+
+    if user.get("role") != "master":
+        if not user.get("department") or record.department != user.get("department"):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="자기 부서 문의만 조회할 수 있습니다.")
+
+    return StreamingResponse(
+        _copilot_stream(req.question, record),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
