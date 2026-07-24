@@ -23,6 +23,10 @@ interface TicketDetailProps {
   /** staff 이상 — "이 부서 아닌 것 같다" 요청 */
   onRequestDeptChange: (reason: string, suggestedDepartment: string | null) => void;
   isRequestingDeptChange: boolean;
+
+  /** AI 코파일럿 사이드바 토글 */
+  copilotOpen: boolean;
+  onToggleCopilot: () => void;
 }
 
 export default function TicketDetail({
@@ -38,6 +42,8 @@ export default function TicketDetail({
   isSavingRule,
   onRequestDeptChange,
   isRequestingDeptChange,
+  copilotOpen,
+  onToggleCopilot,
 }: TicketDetailProps) {
   const edited = draft.trim() !== inquiry.answer_draft.trim();
 
@@ -52,6 +58,19 @@ export default function TicketDetail({
         <span className="text-[12px] font-semibold text-[#94a3b8]">
           {formatDateTime(inquiry.created_at)}
         </span>
+        <span className="flex-1" />
+        <button
+          type="button"
+          onClick={onToggleCopilot}
+          className={[
+            "rounded-[9px] border px-3 py-1.5 text-[12px] font-bold transition-colors",
+            copilotOpen
+              ? "border-[#2563eb] bg-[#eff6ff] text-[#2563eb]"
+              : "border-[#e2e8f0] bg-white text-[#64748b] hover:bg-[#f8fafc]",
+          ].join(" ")}
+        >
+          🤖 AI에게 물어보기
+        </button>
       </div>
 
       <div className="mb-4 rounded-2xl border border-[#e2e8f0] bg-white px-[22px] py-5">

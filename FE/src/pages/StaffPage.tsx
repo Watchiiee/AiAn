@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Inbox from "../components/staff/Inbox";
 import TicketDetail from "../components/staff/TicketDetail";
+import CopilotPanel from "../components/staff/CopilotPanel";
 import Spinner from "../components/common/Spinner";
 import { usePendingInquiries } from "../hooks/usePendingInquiries";
 import { useReviewInquiry } from "../hooks/useReviewInquiry";
@@ -22,6 +23,7 @@ export default function StaffPage() {
   const [priorityFilter, setPriorityFilter] = useState("전체");
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [toast, setToast] = useState<string | null>(null);
+  const [copilotOpen, setCopilotOpen] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   function showToast(message: string) {
@@ -129,6 +131,8 @@ export default function StaffPage() {
               handleRequestDeptChange(selected.id, reason, suggested)
             }
             isRequestingDeptChange={requestDeptChange.isPending}
+            copilotOpen={copilotOpen}
+            onToggleCopilot={() => setCopilotOpen((v) => !v)}
           />
         ) : (
           <div className="flex h-full items-center justify-center">
@@ -138,6 +142,10 @@ export default function StaffPage() {
           </div>
         )}
       </section>
+
+      {selected && copilotOpen && (
+        <CopilotPanel inquiryId={selected.id} onClose={() => setCopilotOpen(false)} />
+      )}
     </main>
   );
 }

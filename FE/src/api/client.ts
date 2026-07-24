@@ -3,7 +3,7 @@ import { getToken, clearSession, dispatchUnauthorized } from "../lib/authStorage
 // 얇은 fetch 래퍼. baseURL 은 .env 의 VITE_API_BASE 로 바꿀 수 있다.
 // 예) .env.development -> VITE_API_BASE=http://localhost:8000
 
-const BASE_URL = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
+export const BASE_URL = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
 export class ApiError extends Error {
   status: number;
