@@ -30,7 +30,7 @@ export default function LoginPage() {
         : null;
 
   return (
-    <main className="flex flex-1 items-center justify-center px-[18px] py-10">
+    <main className="flex flex-1 items-center justify-center overflow-y-auto px-[18px] py-10">
       <div className="w-full max-w-[400px]">
         <div className="mb-7 text-center">
           <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-[11px] bg-gradient-to-br from-[#2563eb] to-[#1d4ed8] text-base font-extrabold text-white">

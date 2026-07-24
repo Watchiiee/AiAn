@@ -8,7 +8,7 @@ import StaffPage from "./pages/StaffPage";
 
 export default function App() {
   return (
-    <div className="flex min-h-screen flex-col bg-[#eef2f7] text-[#0f172a]">
+    <div className="flex h-screen flex-col overflow-hidden bg-[#eef2f7] text-[#0f172a]">
       <Header />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
