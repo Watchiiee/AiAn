@@ -286,6 +286,21 @@ Studio의 실제 스트리밍 형식(`event:token`으로 조각이 오고, 스�
 발견된 문제)를 확인한 뒤 반영했습니다 — 상세 과정은 `DECISION_LOG.md` Y절
 참고.
 
+### 6.8 Ops 모니터링 에이전트 (일일 리포트)
+
+매일 자정(KST 기준 오전 8시) GitHub Actions 스케줄로 실행되어, 최근 24시간
+Langfuse 트레이스를 집계하고 이상 패턴을 이메일로 보고합니다. 이번 세션
+내내 사람이 직접 해온 "실측 → 진단" 작업을 배치로 자동화한 것입니다.
+
+**"판단"과 "설명"을 명확히 분리했습니다**: "이 문제가 특정 카테고리에
+국한된 것인지, 전반적으로 광범위한 것인지"는 임계값(카테고리당 재시도
+3건 이상 등) 비교로 **코드가 결정론적으로 확정**하고, LLM은 그 판정을
+뒤집을 수 없이 그대로 받아들여 왜 그런 판정이 나왔는지 자연스러운 문장으로
+설명하는 역할만 합니다 — 파일럿 검증 중 "이 기준을 프롬프트 문장으로만
+맡기면 안정적으로 지켜지지 않는다"는 것을 실제로 확인하고 반영한
+설계입니다. 문의가 없었던 날(예: 주말)은 빈 리포트를 보내지 않고 발송을
+건너뜁니다. 상세 과정은 `DECISION_LOG.md` Z절 참고.
+
 ---
 
 ## 7. API 개요
@@ -336,7 +351,7 @@ GET    /health
    "실측했는데 차이가 없었다"는 것도 유효한 결론으로 기록하고 다음(실사용
    모니터링)으로 넘겼습니다 — 결론이 안 나온다고 검증을 생략하지 않습니다.
 
-전체 의사결정 과정과 실패·재현 사례는 `DECISION_LOG.md`에 A~Y절로 상세히
+전체 의사결정 과정과 실패·재현 사례는 `DECISION_LOG.md`에 A~Z절로 상세히
 기록되어 있습니다.
 
 ---
@@ -363,6 +378,7 @@ AiAn/
 │   ├── embedder.py                # 로컬 임베딩
 │   ├── prompts.py                 # 분류·생성·채점·코파일럿 프롬프트 전체
 │   ├── copilot.py                 # 담당자 코파일럿 컨텍스트 조합
+│   ├── ops_monitor.py             # Ops 모니터링 - 트레이스 집계·패턴판정·리포트
 │   ├── classifier/classifier.py
 │   └── rag/
 │       ├── ingest.py               # 지식베이스 → 벡터DB
@@ -376,7 +392,8 @@ AiAn/
 │   ├── golden_dataset_*.csv                # 골든셋 (phase1/phase2/bias_probe)
 │   └── hallucination_test_set.csv          # CLOVA/Solar 이중검증 비교용 (25개)
 ├── scripts/                        # 평가·진단 스크립트 모음
-├── DECISION_LOG.md                 # 전체 의사결정 기록 (A~Y절)
+├── .github/workflows/               # GitHub Actions (백엔드/프론트 배포, Ops 모니터링 스케줄)
+├── DECISION_LOG.md                 # 전체 의사결정 기록 (A~Z절)
 └── API_CHANGES_*.md                # 프론트 전달용 API 변경분
 ```
 
@@ -533,9 +550,13 @@ Load Balancer의 Target Group에 그대로 연결했습니다 — ASG가 서버�
 - **CLOVA/Solar 이중검증 결론 미확정**: 골든셋 25개로는 두 모델의 실질적
   차이가 드러나지 않음. 더 미묘한 테스트셋 반복 대신, 실사용 중 Langfuse로
   두 모델의 판단이 갈리는 사례를 관찰하며 판단할 예정.
-- **CI/CD 미구축**: 현재는 서버마다 SSH로 접속해 `git pull` + `docker
-  compose up --build`를 수동으로 반복. GitHub Actions로 빌드·배포를
-  자동화하는 것이 다음 과제.
+- **배포 자동화(SSH 방식)는 보류**: 서버 배포용 GitHub Actions 워크플로
+  (`deploy-backend.yml`/`deploy-frontend.yml`)를 시도했으나 SSH 키 인증
+  문제로 원인 확인이 지연되어, 현재는 서버마다 직접 접속해 `git pull` +
+  `docker compose up --build`를 수동으로 반복. 반면 **SSH가 필요 없는
+  배치 작업(Ops 모니터링 리포트, 6.8절)은 GitHub Actions 스케줄로 실제
+  자동화에 성공**했습니다 — 서버 배포 자동화도 이 방식(SSH 없이 API로
+  직접 배포하는 방법)으로 우회할 수 있는지가 다음 과제입니다.
 - **Auto Scaling 정책 미설정**: 현재 min/desired/max만 고정값으로 설정되어
   있고, CPU 사용률 등 지표 기반 정책(정책 설정)이나 시간대 기반 조정(일정
   설정)은 아직 붙이지 않음.
