@@ -30,5 +30,8 @@ sentence-transformers
 # Observability & Tracing
 langfuse
 
+# Testing
+pytest==8.3.3
+
 # --- Optional / Backup ---
 # google-genai==2.10.0   # Gemini 전환 시 주석 해제

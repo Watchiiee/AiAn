@@ -1,0 +1,33 @@
+name: Run Tests
+
+# AI/BE 코드가 바뀔 때마다 자동으로 회귀테스트 실행. ops-monitor.yml과 같은
+# 이유로 SSH가 전혀 필요 없다 - GitHub 러너 안에서 in-memory SQLite로
+# 테스트하므로 실제 서버·DB에 접속하지 않는다.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "AI/**"
+      - "BE/**"
+      - "tests/**"
+      - "requirements.txt"
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pytest
+        env:
+          DATABASE_URL: "sqlite:///:memory:"
+        run: python3 -m pytest tests/ -v
