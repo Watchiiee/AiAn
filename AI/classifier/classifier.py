@@ -9,10 +9,35 @@ N절 참고). 두 호출 결과를 합쳐 최종 Classification 객체를 만든
 """
 import json
 import re
+import time
 from AI.llm import call_llm, LLMError
 from AI.prompts import CLASSIFIER_SYSTEM, DOMAIN_CLASSIFIER_SYSTEM
 from BE.core.config import settings
 from BE.core.schemas import Classification, InquiryType, Domain, BusinessCategory
+
+
+def _call_with_retry(model: str, system: str, text: str, max_tokens: int, attempts: int = 2) -> str | None:
+    """
+    call_llm()을 감싸서, rate limit(42901 등)을 만나면 즉시 재시도해도 소용
+    없으므로(허용량이 회복될 시간이 필요) 몇 초 쉬었다가 재시도한다. 그 외의
+    일시적 오류(50000 등)는 짧게 바로 재시도한다.
+    실측 확인됨: 89건을 쉬지 않고 순회하면 CLOVA 분당 요청한도(rate limit)에
+    실제로 걸려 특정 구간이 통째로 폴백으로 떨어지는 문제가 있었다(DECISION_LOG
+    참고) - 즉시재시도만으로는 rate limit이 안 풀려서 해결이 안 됐었다.
+    """
+    last_error: LLMError | None = None
+    for attempt in range(attempts):
+        try:
+            return call_llm(model, system, text, max_tokens=max_tokens)
+        except LLMError as e:
+            last_error = e
+            is_rate_limit = "429" in str(e) or "rate" in str(e).lower()
+            if attempt < attempts - 1:
+                time.sleep(5.0 if is_rate_limit else 0.5)
+            continue
+    if last_error is not None:
+        print(f"[WARN] {attempts}회 재시도 후에도 실패({last_error}): {text[:30]!r}")
+    return None
 
 _FALLBACK_KEYWORDS = {
     InquiryType.CAREER_CERT: ["경력", "경력증명", "경력인증", "수첩"],
@@ -27,6 +52,11 @@ _TECH_KEYWORDS = [
     "발전기", "변압기", "차단기", "계전기", "전동기", "모터", "케이블", "배선",
     "절연", "접지", "누전", "고조파", "역률", "용량 계산", "결선", "정격",
     "과열", "과부하", "단락", "지락", "서지", "인버터", "ESS", "수배전",
+    # eval_classification_accuracy.py 실측(89건)에서 발견된 오분류 사례 대응
+    # (P2-06/P2-29/BP-03 등이 admin으로 안정적으로 오분류됨 - classify_domain이
+    # 설명글을 써버려 JSON파싱이 실패하고, 키워드 폴백에서도 이 단어들이
+    # 목록에 없어 기본값(admin)으로 떨어지던 것을 확인, DECISION_LOG 참고)
+    "CT", "변류기", "절연저항", "접지저항", "활선", "THD", "IEEE", "PT",
 ]
 
 
@@ -105,11 +135,7 @@ def classify_domain(text: str) -> Domain:
     사고가 있었다(DECISION_LOG 참고). 정규식으로 "설명글 속에 파묻힌 판단"도
     끝까지 찾아내도록 완화해 이 문제를 근본적으로 방어한다.
     """
-    try:
-        raw = call_llm(settings.classifier_model, DOMAIN_CLASSIFIER_SYSTEM, text, max_tokens=300)
-    except LLMError as e:
-        print(f"[WARN] classify_domain: LLM 호출 실패({e}), 키워드 폴백 사용: {text[:30]!r}")
-        return _guess_domain(text)
+    raw = _call_with_retry(settings.classifier_model, DOMAIN_CLASSIFIER_SYSTEM, text, max_tokens=300)
     if raw is None:
         print(f"[WARN] classify_domain: LLM 응답 없음, 키워드 폴백 사용: {text[:30]!r}")
         return _guess_domain(text)
@@ -141,11 +167,7 @@ def classify_domain(text: str) -> Domain:
 def classify(text: str) -> Classification:
     domain = classify_domain(text)
 
-    try:
-        raw = call_llm(settings.classifier_model, CLASSIFIER_SYSTEM, text, max_tokens=256)
-    except LLMError:
-        fb = _fallback(text)
-        return fb.model_copy(update={"domain": domain})
+    raw = _call_with_retry(settings.classifier_model, CLASSIFIER_SYSTEM, text, max_tokens=256)
 
     if raw is None:
         fb = _fallback(text)
@@ -161,6 +183,7 @@ def classify(text: str) -> Classification:
             category=_parse_category(data.get("category", "기타")),
             is_relevant=bool(data.get("is_relevant", True)),
         )
-    except (json.JSONDecodeError, ValueError, KeyError):
+    except (json.JSONDecodeError, ValueError, KeyError) as e:
+        print(f"[WARN] classify: JSON 파싱 실패({type(e).__name__}: {e}), 원본 응답={raw[:200]!r}")
         fb = _fallback(text)
         return fb.model_copy(update={"domain": domain})
