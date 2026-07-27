@@ -16,6 +16,7 @@
 import sys
 import os
 import csv
+import time
 from collections import Counter
 
 sys.path.insert(0, os.getcwd())
@@ -34,10 +35,16 @@ SOURCE_FILES = [
 
 def _grade_correctness(generated: str, gold_answer: str) -> bool | None:
     user = f"[정답]\n{gold_answer}\n\n[생성된 답변]\n{generated}"
-    try:
-        raw = call_llm(settings.classifier_model, ANSWER_CORRECTNESS_SYSTEM, user, max_tokens=64)
-    except LLMError:
-        return None
+    raw = None
+    for attempt in range(2):
+        try:
+            raw = call_llm(settings.classifier_model, ANSWER_CORRECTNESS_SYSTEM, user, max_tokens=64)
+            break
+        except LLMError as e:
+            is_rate_limit = "429" in str(e) or "rate" in str(e).lower()
+            if attempt == 0:
+                time.sleep(5.0 if is_rate_limit else 0.5)
+            continue
     if raw is None:
         return None
     import json
@@ -59,9 +66,11 @@ def run():
     correctness_results = []  # (id, is_correct or None)
     failures = []
 
-    for row in rows:
+    for idx, row in enumerate(rows):
         question = row["question"]
         gold_answer = row["gold_answer"]
+
+        print(f"[{idx+1}/{len(rows)}] {row['id']} 처리 중... (전체 파이프라인, 문항당 여러 LLM호출)")
 
         try:
             response = process_inquiry(question)
@@ -69,6 +78,11 @@ def run():
             print(f"[{row['id']}] process_inquiry 실패: {e}")
             failures.append(row["id"])
             continue
+        finally:
+            # 문항당 LLM 호출이 많아(분류·긴급판단·문서채점·생성·검증2개, 재시도
+            # 포함하면 10회 이상 가능) classify()보다 훨씬 rate limit에 취약함
+            # - 실측으로 확인된 rate limit 문제(DECISION_LOG 참고) 재발 방지용
+            time.sleep(2.0)
 
         confidence_dist[response.answer_confidence.value] += 1
 
